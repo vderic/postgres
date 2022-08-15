@@ -342,76 +342,12 @@ static void postgresReScanForeignScan(ForeignScanState *node);
 static void postgresEndForeignScan(ForeignScanState *node);
 
 
-static void postgresAddForeignUpdateTargets(PlannerInfo *root,
-											Index rtindex,
-											RangeTblEntry *target_rte,
-											Relation target_relation);
-static List *postgresPlanForeignModify(PlannerInfo *root,
-									   ModifyTable *plan,
-									   Index resultRelation,
-									   int subplan_index);
-static void postgresBeginForeignModify(ModifyTableState *mtstate,
-									   ResultRelInfo *resultRelInfo,
-									   List *fdw_private,
-									   int subplan_index,
-									   int eflags);
-static TupleTableSlot *postgresExecForeignInsert(EState *estate,
-												 ResultRelInfo *resultRelInfo,
-												 TupleTableSlot *slot,
-												 TupleTableSlot *planSlot);
-static TupleTableSlot **postgresExecForeignBatchInsert(EState *estate,
-													   ResultRelInfo *resultRelInfo,
-													   TupleTableSlot **slots,
-													   TupleTableSlot **planSlots,
-													   int *numSlots);
-static int	postgresGetForeignModifyBatchSize(ResultRelInfo *resultRelInfo);
-static TupleTableSlot *postgresExecForeignUpdate(EState *estate,
-												 ResultRelInfo *resultRelInfo,
-												 TupleTableSlot *slot,
-												 TupleTableSlot *planSlot);
-static TupleTableSlot *postgresExecForeignDelete(EState *estate,
-												 ResultRelInfo *resultRelInfo,
-												 TupleTableSlot *slot,
-												 TupleTableSlot *planSlot);
-static void postgresEndForeignModify(EState *estate,
-									 ResultRelInfo *resultRelInfo);
-static void postgresBeginForeignInsert(ModifyTableState *mtstate,
-									   ResultRelInfo *resultRelInfo);
-static void postgresEndForeignInsert(EState *estate,
-									 ResultRelInfo *resultRelInfo);
-static int	postgresIsForeignRelUpdatable(Relation rel);
-static bool postgresPlanDirectModify(PlannerInfo *root,
-									 ModifyTable *plan,
-									 Index resultRelation,
-									 int subplan_index);
-static void postgresBeginDirectModify(ForeignScanState *node, int eflags);
-static TupleTableSlot *postgresIterateDirectModify(ForeignScanState *node);
-static void postgresEndDirectModify(ForeignScanState *node);
 static void postgresExplainForeignScan(ForeignScanState *node,
 									   ExplainState *es);
-static void postgresExplainForeignModify(ModifyTableState *mtstate,
-										 ResultRelInfo *rinfo,
-										 List *fdw_private,
-										 int subplan_index,
-										 ExplainState *es);
-static void postgresExplainDirectModify(ForeignScanState *node,
-										ExplainState *es);
-static void postgresExecForeignTruncate(List *rels,
-										DropBehavior behavior,
-										bool restart_seqs);
+
 static bool postgresAnalyzeForeignTable(Relation relation,
 										AcquireSampleRowsFunc *func,
 										BlockNumber *totalpages);
-static List *postgresImportForeignSchema(ImportForeignSchemaStmt *stmt,
-										 Oid serverOid);
-static void postgresGetForeignJoinPaths(PlannerInfo *root,
-										RelOptInfo *joinrel,
-										RelOptInfo *outerrel,
-										RelOptInfo *innerrel,
-										JoinType jointype,
-										JoinPathExtraData *extra);
-static bool postgresRecheckForeignScan(ForeignScanState *node,
-									   TupleTableSlot *slot);
 static void postgresGetForeignUpperPaths(PlannerInfo *root,
 										 UpperRelationKind stage,
 										 RelOptInfo *input_rel,
@@ -480,9 +416,6 @@ static HeapTuple make_tuple_from_result_row(PGresult *res,
 											ForeignScanState *fsstate,
 											MemoryContext temp_context);
 static void conversion_error_callback(void *arg);
-static bool foreign_join_ok(PlannerInfo *root, RelOptInfo *joinrel,
-							JoinType jointype, RelOptInfo *outerrel, RelOptInfo *innerrel,
-							JoinPathExtraData *extra);
 static bool foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel,
 								Node *havingQual);
 static void add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
@@ -523,6 +456,7 @@ kite_fdw_handler(PG_FUNCTION_ARGS)
 	routine->ReScanForeignScan = postgresReScanForeignScan;
 	routine->EndForeignScan = postgresEndForeignScan;
 
+#if 0
 	/* Functions for updating foreign tables */
 	routine->AddForeignUpdateTargets = postgresAddForeignUpdateTargets;
 	routine->PlanForeignModify = postgresPlanForeignModify;
@@ -540,25 +474,34 @@ kite_fdw_handler(PG_FUNCTION_ARGS)
 	routine->BeginDirectModify = postgresBeginDirectModify;
 	routine->IterateDirectModify = postgresIterateDirectModify;
 	routine->EndDirectModify = postgresEndDirectModify;
+#endif
 
+#if 0
 	/* Function for EvalPlanQual rechecks */
 	routine->RecheckForeignScan = postgresRecheckForeignScan;
+#endif
 	/* Support functions for EXPLAIN */
 	routine->ExplainForeignScan = postgresExplainForeignScan;
+#if 0
 	routine->ExplainForeignModify = postgresExplainForeignModify;
 	routine->ExplainDirectModify = postgresExplainDirectModify;
+#endif
 
+#if 0
 	/* Support function for TRUNCATE */
 	routine->ExecForeignTruncate = postgresExecForeignTruncate;
+#endif
 
 	/* Support functions for ANALYZE */
 	routine->AnalyzeForeignTable = postgresAnalyzeForeignTable;
 
+#if 0
 	/* Support functions for IMPORT FOREIGN SCHEMA */
 	routine->ImportForeignSchema = postgresImportForeignSchema;
 
 	/* Support functions for join push-down */
 	routine->GetForeignJoinPaths = postgresGetForeignJoinPaths;
+#endif
 
 	/* Support functions for upper relation push-down */
 	routine->GetForeignUpperPaths = postgresGetForeignUpperPaths;
@@ -1470,207 +1413,6 @@ postgresEndForeignScan(ForeignScanState *node)
 }
 
 /*
- * postgresAddForeignUpdateTargets
- *		Add resjunk column(s) needed for update/delete on a foreign table
- */
-static void
-postgresAddForeignUpdateTargets(PlannerInfo *root,
-								Index rtindex,
-								RangeTblEntry *target_rte,
-								Relation target_relation)
-{
-}
-
-/*
- * postgresPlanForeignModify
- *		Plan an insert/update/delete operation on a foreign table
- */
-static List *
-postgresPlanForeignModify(PlannerInfo *root,
-						  ModifyTable *plan,
-						  Index resultRelation,
-						  int subplan_index)
-{
-	return NULL;
-}
-
-/*
- * postgresBeginForeignModify
- *		Begin an insert/update/delete operation on a foreign table
- */
-static void
-postgresBeginForeignModify(ModifyTableState *mtstate,
-						   ResultRelInfo *resultRelInfo,
-						   List *fdw_private,
-						   int subplan_index,
-						   int eflags)
-{
-}
-
-/*
- * postgresExecForeignInsert
- *		Insert one row into a foreign table
- */
-static TupleTableSlot *
-postgresExecForeignInsert(EState *estate,
-						  ResultRelInfo *resultRelInfo,
-						  TupleTableSlot *slot,
-						  TupleTableSlot *planSlot)
-{
-	return NULL;
-}
-
-/*
- * postgresExecForeignBatchInsert
- *		Insert multiple rows into a foreign table
- */
-static TupleTableSlot **
-postgresExecForeignBatchInsert(EState *estate,
-							   ResultRelInfo *resultRelInfo,
-							   TupleTableSlot **slots,
-							   TupleTableSlot **planSlots,
-							   int *numSlots)
-{
-	return NULL;
-}
-
-/*
- * postgresGetForeignModifyBatchSize
- *		Determine the maximum number of tuples that can be inserted in bulk
- *
- * Returns the batch size specified for server or table. When batching is not
- * allowed (e.g. for tables with BEFORE/AFTER ROW triggers or with RETURNING
- * clause), returns 1.
- */
-static int
-postgresGetForeignModifyBatchSize(ResultRelInfo *resultRelInfo)
-{
-	return 1;
-}
-
-/*
- * postgresExecForeignUpdate
- *		Update one row in a foreign table
- */
-static TupleTableSlot *
-postgresExecForeignUpdate(EState *estate,
-						  ResultRelInfo *resultRelInfo,
-						  TupleTableSlot *slot,
-						  TupleTableSlot *planSlot)
-{
-	return NULL;
-}
-
-/*
- * postgresExecForeignDelete
- *		Delete one row from a foreign table
- */
-static TupleTableSlot *
-postgresExecForeignDelete(EState *estate,
-						  ResultRelInfo *resultRelInfo,
-						  TupleTableSlot *slot,
-						  TupleTableSlot *planSlot)
-{
-	return NULL;
-}
-
-/*
- * postgresEndForeignModify
- *		Finish an insert/update/delete operation on a foreign table
- */
-static void
-postgresEndForeignModify(EState *estate,
-						 ResultRelInfo *resultRelInfo)
-{
-}
-
-/*
- * postgresBeginForeignInsert
- *		Begin an insert operation on a foreign table
- */
-static void
-postgresBeginForeignInsert(ModifyTableState *mtstate,
-						   ResultRelInfo *resultRelInfo)
-{
-}
-
-/*
- * postgresEndForeignInsert
- *		Finish an insert operation on a foreign table
- */
-static void
-postgresEndForeignInsert(EState *estate,
-						 ResultRelInfo *resultRelInfo)
-{
-}
-
-/*
- * postgresIsForeignRelUpdatable
- *		Determine whether a foreign table supports INSERT, UPDATE and/or
- *		DELETE.
- */
-static int
-postgresIsForeignRelUpdatable(Relation rel)
-{
-	return 0;
-}
-
-/*
- * postgresRecheckForeignScan
- *		Execute a local join execution plan for a foreign join
- */
-static bool
-postgresRecheckForeignScan(ForeignScanState *node, TupleTableSlot *slot)
-{
-	return false;
-}
-
-/*
- * postgresPlanDirectModify
- *		Consider a direct foreign table modification
- *
- * Decide whether it is safe to modify a foreign table directly, and if so,
- * rewrite subplan accordingly.
- */
-static bool
-postgresPlanDirectModify(PlannerInfo *root,
-						 ModifyTable *plan,
-						 Index resultRelation,
-						 int subplan_index)
-{
-	return false;
-}
-
-/*
- * postgresBeginDirectModify
- *		Prepare a direct foreign table modification
- */
-static void
-postgresBeginDirectModify(ForeignScanState *node, int eflags)
-{
-
-}
-
-/*
- * postgresIterateDirectModify
- *		Execute a direct foreign table modification
- */
-static TupleTableSlot *
-postgresIterateDirectModify(ForeignScanState *node)
-{
-	return NULL;
-}
-
-/*
- * postgresEndDirectModify
- *		Finish a direct foreign table modification
- */
-static void
-postgresEndDirectModify(ForeignScanState *node)
-{
-}
-
-/*
  * postgresExplainForeignScan
  *		Produce extra output for EXPLAIN of a ForeignScan on a foreign table
  */
@@ -1777,40 +1519,6 @@ postgresExplainForeignScan(ForeignScanState *node, ExplainState *es)
 		ExplainPropertyText("Remote SQL", sql, es);
 	}
 #endif
-}
-
-/*
- * postgresExplainForeignModify
- *		Produce extra output for EXPLAIN of a ModifyTable on a foreign table
- */
-static void
-postgresExplainForeignModify(ModifyTableState *mtstate,
-							 ResultRelInfo *rinfo,
-							 List *fdw_private,
-							 int subplan_index,
-							 ExplainState *es)
-{
-}
-
-/*
- * postgresExplainDirectModify
- *		Produce extra output for EXPLAIN of a ForeignScan that modifies a
- *		foreign table directly
- */
-static void
-postgresExplainDirectModify(ForeignScanState *node, ExplainState *es)
-{
-}
-
-/*
- * postgresExecForeignTruncate
- *		Truncate one or more foreign tables
- */
-static void
-postgresExecForeignTruncate(List *rels,
-							DropBehavior behavior,
-							bool restart_seqs)
-{
 }
 
 /*
@@ -3072,28 +2780,6 @@ analyze_row_processor(PGresult *res, int row, PgFdwAnalyzeState *astate)
 	}
 }
 
-/*
- * Import a foreign schema
- */
-static List *
-postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
-{
-	return NULL;
-}
-
-/*
- * Assess whether the join between inner and outer relations can be pushed down
- * to the foreign server. As a side effect, save information we obtain in this
- * function to PgFdwRelationInfo passed in.
- */
-static bool
-foreign_join_ok(PlannerInfo *root, RelOptInfo *joinrel, JoinType jointype,
-				RelOptInfo *outerrel, RelOptInfo *innerrel,
-				JoinPathExtraData *extra)
-{
-	return false;
-}
-
 static void
 add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
 								Path *epq_path)
@@ -3219,82 +2905,6 @@ merge_fdw_options(PgFdwRelationInfo *fpinfo,
 		fpinfo->async_capable = fpinfo_o->async_capable ||
 			fpinfo_i->async_capable;
 	}
-}
-
-/*
- * postgresGetForeignJoinPaths
- *		Add possible ForeignPath to joinrel, if join is safe to push down.
- */
-static void
-postgresGetForeignJoinPaths(PlannerInfo *root,
-							RelOptInfo *joinrel,
-							RelOptInfo *outerrel,
-							RelOptInfo *innerrel,
-							JoinType jointype,
-							JoinPathExtraData *extra)
-{
-	PgFdwRelationInfo *fpinfo;
-	Path	   *epq_path;		/* Path to create plan to be executed when
-								 * EvalPlanQual gets triggered. */
-
-	/*
-	 * Skip if this join combination has been considered already.
-	 */
-	if (joinrel->fdw_private)
-		return;
-
-	/*
-	 * This code does not work for joins with lateral references, since those
-	 * must have parameterized paths, which we don't generate yet.
-	 */
-	if (!bms_is_empty(joinrel->lateral_relids))
-		return;
-
-	/*
-	 * Create unfinished PgFdwRelationInfo entry which is used to indicate
-	 * that the join relation is already considered, so that we won't waste
-	 * time in judging safety of join pushdown and adding the same paths again
-	 * if found safe. Once we know that this join can be pushed down, we fill
-	 * the entry.
-	 */
-	fpinfo = (PgFdwRelationInfo *) palloc0(sizeof(PgFdwRelationInfo));
-	fpinfo->pushdown_safe = false;
-	joinrel->fdw_private = fpinfo;
-	/* attrs_used is only for base relations. */
-	fpinfo->attrs_used = NULL;
-
-	/*
-	 * If there is a possibility that EvalPlanQual will be executed, we need
-	 * to be able to reconstruct the row using scans of the base relations.
-	 * GetExistingLocalJoinPath will find a suitable path for this purpose in
-	 * the path list of the joinrel, if one exists.  We must be careful to
-	 * call it before adding any ForeignPath, since the ForeignPath might
-	 * dominate the only suitable local path available.  We also do it before
-	 * calling foreign_join_ok(), since that function updates fpinfo and marks
-	 * it as pushable if the join is found to be pushable.
-	 */
-	if (root->parse->commandType == CMD_DELETE ||
-		root->parse->commandType == CMD_UPDATE ||
-		root->rowMarks)
-	{
-		epq_path = GetExistingLocalJoinPath(joinrel);
-		if (!epq_path)
-		{
-			elog(DEBUG3, "could not push down foreign join because a local path suitable for EPQ checks was not found");
-			return;
-		}
-	}
-	else
-		epq_path = NULL;
-
-	if (!foreign_join_ok(root, joinrel, jointype, outerrel, innerrel, extra))
-	{
-		/* Free path required for EPQ if we copied one; we don't need it now */
-		if (epq_path)
-			pfree(epq_path);
-		return;
-	}
-
 }
 
 /*
