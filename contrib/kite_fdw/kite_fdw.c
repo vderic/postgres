@@ -85,53 +85,6 @@ enum FdwScanPrivateIndex
 };
 
 /*
- * Similarly, this enum describes what's kept in the fdw_private list for
- * a ModifyTable node referencing a postgres_fdw foreign table.  We store:
- *
- * 1) INSERT/UPDATE/DELETE statement text to be sent to the remote server
- * 2) Integer list of target attribute numbers for INSERT/UPDATE
- *	  (NIL for a DELETE)
- * 3) Length till the end of VALUES clause for INSERT
- *	  (-1 for a DELETE/UPDATE)
- * 4) Boolean flag showing if the remote query has a RETURNING clause
- * 5) Integer list of attribute numbers retrieved by RETURNING, if any
- */
-enum FdwModifyPrivateIndex
-{
-	/* SQL statement to execute remotely (as a String node) */
-	FdwModifyPrivateUpdateSql,
-	/* Integer list of target attribute numbers for INSERT/UPDATE */
-	FdwModifyPrivateTargetAttnums,
-	/* Length till the end of VALUES clause (as an Integer node) */
-	FdwModifyPrivateLen,
-	/* has-returning flag (as a Boolean node) */
-	FdwModifyPrivateHasReturning,
-	/* Integer list of attribute numbers retrieved by RETURNING */
-	FdwModifyPrivateRetrievedAttrs
-};
-
-/*
- * Similarly, this enum describes what's kept in the fdw_private list for
- * a ForeignScan node that modifies a foreign table directly.  We store:
- *
- * 1) UPDATE/DELETE statement text to be sent to the remote server
- * 2) Boolean flag showing if the remote query has a RETURNING clause
- * 3) Integer list of attribute numbers retrieved by RETURNING, if any
- * 4) Boolean flag showing if we set the command es_processed
- */
-enum FdwDirectModifyPrivateIndex
-{
-	/* SQL statement to execute remotely (as a String node) */
-	FdwDirectModifyPrivateUpdateSql,
-	/* has-returning flag (as a Boolean node) */
-	FdwDirectModifyPrivateHasReturning,
-	/* Integer list of attribute numbers retrieved by RETURNING */
-	FdwDirectModifyPrivateRetrievedAttrs,
-	/* set-processed flag (as a Boolean node) */
-	FdwDirectModifyPrivateSetProcessed
-};
-
-/*
  * Execution state of a foreign scan using postgres_fdw.
  */
 typedef struct PgFdwScanState
@@ -173,80 +126,6 @@ typedef struct PgFdwScanState
 
 	int			fetch_size;		/* number of tuples per fetch */
 } PgFdwScanState;
-
-/*
- * Execution state of a foreign insert/update/delete operation.
- */
-typedef struct PgFdwModifyState
-{
-	Relation	rel;			/* relcache entry for the foreign table */
-	AttInMetadata *attinmeta;	/* attribute datatype conversion metadata */
-
-	/* for remote query execution */
-	PGconn	   *conn;			/* connection for the scan */
-	PgFdwConnState *conn_state; /* extra per-connection state */
-	char	   *p_name;			/* name of prepared statement, if created */
-
-	/* extracted fdw_private data */
-	char	   *query;			/* text of INSERT/UPDATE/DELETE command */
-	char	   *orig_query;		/* original text of INSERT command */
-	List	   *target_attrs;	/* list of target attribute numbers */
-	int			values_end;		/* length up to the end of VALUES */
-	int			batch_size;		/* value of FDW option "batch_size" */
-	bool		has_returning;	/* is there a RETURNING clause? */
-	List	   *retrieved_attrs;	/* attr numbers retrieved by RETURNING */
-
-	/* info about parameters for prepared statement */
-	AttrNumber	ctidAttno;		/* attnum of input resjunk ctid column */
-	int			p_nums;			/* number of parameters to transmit */
-	FmgrInfo   *p_flinfo;		/* output conversion functions for them */
-
-	/* batch operation stuff */
-	int			num_slots;		/* number of slots to insert */
-
-	/* working memory context */
-	MemoryContext temp_cxt;		/* context for per-tuple temporary data */
-
-	/* for update row movement if subplan result rel */
-	struct PgFdwModifyState *aux_fmstate;	/* foreign-insert state, if
-											 * created */
-} PgFdwModifyState;
-
-/*
- * Execution state of a foreign scan that modifies a foreign table directly.
- */
-typedef struct PgFdwDirectModifyState
-{
-	Relation	rel;			/* relcache entry for the foreign table */
-	AttInMetadata *attinmeta;	/* attribute datatype conversion metadata */
-
-	/* extracted fdw_private data */
-	char	   *query;			/* text of UPDATE/DELETE command */
-	bool		has_returning;	/* is there a RETURNING clause? */
-	List	   *retrieved_attrs;	/* attr numbers retrieved by RETURNING */
-	bool		set_processed;	/* do we set the command es_processed? */
-
-	/* for remote query execution */
-	PGconn	   *conn;			/* connection for the update */
-	PgFdwConnState *conn_state; /* extra per-connection state */
-	int			numParams;		/* number of parameters passed to query */
-	FmgrInfo   *param_flinfo;	/* output conversion functions for them */
-	List	   *param_exprs;	/* executable expressions for param values */
-	const char **param_values;	/* textual values of query parameters */
-
-	/* for storing result tuples */
-	PGresult   *result;			/* result for query */
-	int			num_tuples;		/* # of result tuples */
-	int			next_tuple;		/* index of next one to return */
-	Relation	resultRel;		/* relcache entry for the target relation */
-	AttrNumber *attnoMap;		/* array of attnums of input user columns */
-	AttrNumber	ctidAttno;		/* attnum of input ctid column */
-	AttrNumber	oidAttno;		/* attnum of input oid column */
-	bool		hasSystemCols;	/* are there system columns of resultRel? */
-
-	/* working memory context */
-	MemoryContext temp_cxt;		/* context for per-tuple temporary data */
-} PgFdwDirectModifyState;
 
 /*
  * Workspace for analyzing a foreign table.
