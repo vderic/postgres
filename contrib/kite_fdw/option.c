@@ -391,6 +391,7 @@ ExtractConnectionOptions(List *defelems, const char **keywords,
 	{
 		DefElem    *d = (DefElem *) lfirst(lc);
 
+		elog(LOG, "Connection option %s %s", d->defname, defGetString(d));
 		if (is_libpq_option(d->defname))
 		{
 			keywords[i] = d->defname;

@@ -1335,6 +1335,22 @@ deparseSelectSql(List *tlist, bool is_subquery, List **retrieved_attrs,
 	}
 	else if (IS_JOIN_REL(foreignrel) || IS_UPPER_REL(foreignrel))
 	{
+		RelOptInfo *scanrel = context->scanrel;
+		RangeTblEntry *rte = planner_rt_fetch(scanrel->relid, root);
+		Relation rel = table_open(rte->relid, NoLock);
+
+		TupleDesc tupdesc = RelationGetDescr(rel);
+
+		int i;
+	
+		for (i = 1 ; i <= tupdesc->natts; i++) {
+			Form_pg_attribute attr = TupleDescAttr(tupdesc, i - 1);
+			elog(LOG, "SCAN col[%d]: name = %s, typid = %d, typmod = %d", i, NameStr(attr->attname), attr->atttypid, attr->atttypmod);
+		}
+
+
+		table_close(rel, NoLock);
+
 		/*
 		 * For a join or upper relation the input tlist gives the list of
 		 * columns required to be fetched from the foreign server.
@@ -1427,6 +1443,8 @@ deparseTargetList(StringInfo buf,
 	for (i = 1; i <= tupdesc->natts; i++)
 	{
 		Form_pg_attribute attr = TupleDescAttr(tupdesc, i - 1);
+
+		elog(LOG, "col[%d]: name = %s, typid = %d, typmod = %d", i, NameStr(attr->attname), attr->atttypid, attr->atttypmod);
 
 		/* Ignore dropped attributes. */
 		if (attr->attisdropped)
