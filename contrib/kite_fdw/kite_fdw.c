@@ -261,9 +261,6 @@ static void adjust_foreign_grouping_path_cost(PlannerInfo *root,
 											  double limit_tuples,
 											  Cost *p_startup_cost,
 											  Cost *p_run_cost);
-static bool ec_member_matches_foreign(PlannerInfo *root, RelOptInfo *rel,
-									  EquivalenceClass *ec, EquivalenceMember *em,
-									  void *arg);
 static void create_cursor(ForeignScanState *node);
 static void fetch_more_data(ForeignScanState *node);
 static void close_cursor(PGconn *conn, unsigned int cursor_number,
@@ -297,8 +294,6 @@ static HeapTuple make_tuple_from_result_row(PGresult *res,
 static void conversion_error_callback(void *arg);
 static bool foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel,
 								Node *havingQual);
-static void add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
-											Path *epq_path);
 static void add_foreign_grouping_paths(PlannerInfo *root,
 									   RelOptInfo *input_rel,
 									   RelOptInfo *grouped_rel,
@@ -577,8 +572,6 @@ postgresGetForeignPaths(PlannerInfo *root,
 {
 	PgFdwRelationInfo *fpinfo = (PgFdwRelationInfo *) baserel->fdw_private;
 	ForeignPath *path;
-	List	   *ppi_list;
-	ListCell   *lc;
 
 	/*
 	 * Create simplest ForeignScan path node and add it to baserel.  This path
@@ -601,178 +594,6 @@ postgresGetForeignPaths(PlannerInfo *root,
 								   NIL);	/* no fdw_private list */
 	add_path(baserel, (Path *) path);
 
-	/* Add paths with pathkeys */
-	add_paths_with_pathkeys_for_rel(root, baserel, NULL);
-
-	/*
-	 * If we're not using remote estimates, stop here.  We have no way to
-	 * estimate whether any join clauses would be worth sending across, so
-	 * don't bother building parameterized paths.
-	 */
-	if (!fpinfo->use_remote_estimate)
-		return;
-
-	/*
-	 * Thumb through all join clauses for the rel to identify which outer
-	 * relations could supply one or more safe-to-send-to-remote join clauses.
-	 * We'll build a parameterized path for each such outer relation.
-	 *
-	 * It's convenient to manage this by representing each candidate outer
-	 * relation by the ParamPathInfo node for it.  We can then use the
-	 * ppi_clauses list in the ParamPathInfo node directly as a list of the
-	 * interesting join clauses for that rel.  This takes care of the
-	 * possibility that there are multiple safe join clauses for such a rel,
-	 * and also ensures that we account for unsafe join clauses that we'll
-	 * still have to enforce locally (since the parameterized-path machinery
-	 * insists that we handle all movable clauses).
-	 */
-	ppi_list = NIL;
-	foreach(lc, baserel->joininfo)
-	{
-		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
-		Relids		required_outer;
-		ParamPathInfo *param_info;
-
-		/* Check if clause can be moved to this rel */
-		if (!join_clause_is_movable_to(rinfo, baserel))
-			continue;
-
-		/* See if it is safe to send to remote */
-		if (!is_foreign_expr(root, baserel, rinfo->clause))
-			continue;
-
-		/* Calculate required outer rels for the resulting path */
-		required_outer = bms_union(rinfo->clause_relids,
-								   baserel->lateral_relids);
-		/* We do not want the foreign rel itself listed in required_outer */
-		required_outer = bms_del_member(required_outer, baserel->relid);
-
-		/*
-		 * required_outer probably can't be empty here, but if it were, we
-		 * couldn't make a parameterized path.
-		 */
-		if (bms_is_empty(required_outer))
-			continue;
-
-		/* Get the ParamPathInfo */
-		param_info = get_baserel_parampathinfo(root, baserel,
-											   required_outer);
-		Assert(param_info != NULL);
-
-		/*
-		 * Add it to list unless we already have it.  Testing pointer equality
-		 * is OK since get_baserel_parampathinfo won't make duplicates.
-		 */
-		ppi_list = list_append_unique_ptr(ppi_list, param_info);
-	}
-
-	/*
-	 * The above scan examined only "generic" join clauses, not those that
-	 * were absorbed into EquivalenceClauses.  See if we can make anything out
-	 * of EquivalenceClauses.
-	 */
-	if (baserel->has_eclass_joins)
-	{
-		/*
-		 * We repeatedly scan the eclass list looking for column references
-		 * (or expressions) belonging to the foreign rel.  Each time we find
-		 * one, we generate a list of equivalence joinclauses for it, and then
-		 * see if any are safe to send to the remote.  Repeat till there are
-		 * no more candidate EC members.
-		 */
-		ec_member_foreign_arg arg;
-
-		arg.already_used = NIL;
-		for (;;)
-		{
-			List	   *clauses;
-
-			/* Make clauses, skipping any that join to lateral_referencers */
-			arg.current = NULL;
-			clauses = generate_implied_equalities_for_column(root,
-															 baserel,
-															 ec_member_matches_foreign,
-															 (void *) &arg,
-															 baserel->lateral_referencers);
-
-			/* Done if there are no more expressions in the foreign rel */
-			if (arg.current == NULL)
-			{
-				Assert(clauses == NIL);
-				break;
-			}
-
-			/* Scan the extracted join clauses */
-			foreach(lc, clauses)
-			{
-				RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
-				Relids		required_outer;
-				ParamPathInfo *param_info;
-
-				/* Check if clause can be moved to this rel */
-				if (!join_clause_is_movable_to(rinfo, baserel))
-					continue;
-
-				/* See if it is safe to send to remote */
-				if (!is_foreign_expr(root, baserel, rinfo->clause))
-					continue;
-
-				/* Calculate required outer rels for the resulting path */
-				required_outer = bms_union(rinfo->clause_relids,
-										   baserel->lateral_relids);
-				required_outer = bms_del_member(required_outer, baserel->relid);
-				if (bms_is_empty(required_outer))
-					continue;
-
-				/* Get the ParamPathInfo */
-				param_info = get_baserel_parampathinfo(root, baserel,
-													   required_outer);
-				Assert(param_info != NULL);
-
-				/* Add it to list unless we already have it */
-				ppi_list = list_append_unique_ptr(ppi_list, param_info);
-			}
-
-			/* Try again, now ignoring the expression we found this time */
-			arg.already_used = lappend(arg.already_used, arg.current);
-		}
-	}
-
-	/*
-	 * Now build a path for each useful outer relation.
-	 */
-	foreach(lc, ppi_list)
-	{
-		ParamPathInfo *param_info = (ParamPathInfo *) lfirst(lc);
-		double		rows;
-		int			width;
-		Cost		startup_cost;
-		Cost		total_cost;
-
-		/* Get a cost estimate from the remote */
-		estimate_path_cost_size(root, baserel,
-								param_info->ppi_clauses, NIL, NULL,
-								&rows, &width,
-								&startup_cost, &total_cost);
-
-		/*
-		 * ppi_rows currently won't get looked at by anything, but still we
-		 * may as well ensure that it matches our idea of the rowcount.
-		 */
-		param_info->ppi_rows = rows;
-
-		/* Make the path */
-		path = create_foreignscan_path(root, baserel,
-									   NULL,	/* default pathtarget */
-									   rows,
-									   startup_cost,
-									   total_cost,
-									   NIL, /* no pathkeys */
-									   param_info->ppi_req_outer,
-									   NULL,
-									   NIL);	/* no fdw_private list */
-		add_path(baserel, (Path *) path);
-	}
 }
 
 /*
@@ -2014,19 +1835,6 @@ adjust_foreign_grouping_path_cost(PlannerInfo *root,
 }
 
 /*
- * Detect whether we want to process an EquivalenceClass member.
- *
- * This is a callback for use by generate_implied_equalities_for_column.
- */
-static bool
-ec_member_matches_foreign(PlannerInfo *root, RelOptInfo *rel,
-						  EquivalenceClass *ec, EquivalenceMember *em,
-						  void *arg)
-{
-	return false;
-}
-
-/*
  * Create cursor for node's query with current parameter values.
  */
 static void
@@ -2657,12 +2465,6 @@ analyze_row_processor(PGresult *res, int row, PgFdwAnalyzeState *astate)
 
 		MemoryContextSwitchTo(oldcontext);
 	}
-}
-
-static void
-add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
-								Path *epq_path)
-{
 }
 
 /*
