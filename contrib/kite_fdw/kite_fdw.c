@@ -221,21 +221,25 @@ static void postgresReScanForeignScan(ForeignScanState *node);
 static void postgresEndForeignScan(ForeignScanState *node);
 
 
+#if 0
 static void postgresExplainForeignScan(ForeignScanState *node,
 									   ExplainState *es);
 
 static bool postgresAnalyzeForeignTable(Relation relation,
 										AcquireSampleRowsFunc *func,
 										BlockNumber *totalpages);
+#endif
 static void postgresGetForeignUpperPaths(PlannerInfo *root,
 										 UpperRelationKind stage,
 										 RelOptInfo *input_rel,
 										 RelOptInfo *output_rel,
 										 void *extra);
+#if 0
 static bool postgresIsForeignPathAsyncCapable(ForeignPath *path);
 static void postgresForeignAsyncRequest(AsyncRequest *areq);
 static void postgresForeignAsyncConfigureWait(AsyncRequest *areq);
 static void postgresForeignAsyncNotify(AsyncRequest *areq);
+#endif
 
 
 /*
@@ -275,6 +279,7 @@ static void process_query_params(ExprContext *econtext,
 								 FmgrInfo *param_flinfo,
 								 List *param_exprs,
 								 const char **param_values);
+#if 0
 static int	postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 										  HeapTuple *rows, int targrows,
 										  double *totalrows,
@@ -282,8 +287,12 @@ static int	postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 static void analyze_row_processor(PGresult *res, int row,
 								  PgFdwAnalyzeState *astate);
 static void produce_tuple_asynchronously(AsyncRequest *areq, bool fetch);
+#endif
+
+#if 0
 static void fetch_more_data_begin(AsyncRequest *areq);
 static void complete_pending_request(AsyncRequest *areq);
+#endif
 static HeapTuple make_tuple_from_result_row(PGresult *res,
 											int row,
 											Relation rel,
@@ -354,9 +363,9 @@ kite_fdw_handler(PG_FUNCTION_ARGS)
 	/* Function for EvalPlanQual rechecks */
 	routine->RecheckForeignScan = postgresRecheckForeignScan;
 #endif
+#if 0
 	/* Support functions for EXPLAIN */
 	routine->ExplainForeignScan = postgresExplainForeignScan;
-#if 0
 	routine->ExplainForeignModify = postgresExplainForeignModify;
 	routine->ExplainDirectModify = postgresExplainDirectModify;
 #endif
@@ -366,10 +375,10 @@ kite_fdw_handler(PG_FUNCTION_ARGS)
 	routine->ExecForeignTruncate = postgresExecForeignTruncate;
 #endif
 
+#if 0
 	/* Support functions for ANALYZE */
 	routine->AnalyzeForeignTable = postgresAnalyzeForeignTable;
 
-#if 0
 	/* Support functions for IMPORT FOREIGN SCHEMA */
 	routine->ImportForeignSchema = postgresImportForeignSchema;
 
@@ -380,11 +389,13 @@ kite_fdw_handler(PG_FUNCTION_ARGS)
 	/* Support functions for upper relation push-down */
 	routine->GetForeignUpperPaths = postgresGetForeignUpperPaths;
 
+#if 0
 	/* Support functions for asynchronous execution */
 	routine->IsForeignPathAsyncCapable = postgresIsForeignPathAsyncCapable;
 	routine->ForeignAsyncRequest = postgresForeignAsyncRequest;
 	routine->ForeignAsyncConfigureWait = postgresForeignAsyncConfigureWait;
 	routine->ForeignAsyncNotify = postgresForeignAsyncNotify;
+#endif
 
 	PG_RETURN_POINTER(routine);
 }
@@ -405,6 +416,7 @@ postgresGetForeignRelSize(PlannerInfo *root,
 	ListCell   *lc;
 	RangeTblEntry *rte = planner_rt_fetch(baserel->relid, root);
 
+	elog(LOG, "postgresGetForeignRelSize");
 	/*
 	 * We use PgFdwRelationInfo to pass various information to subsequent
 	 * functions.
@@ -573,6 +585,7 @@ postgresGetForeignPaths(PlannerInfo *root,
 	PgFdwRelationInfo *fpinfo = (PgFdwRelationInfo *) baserel->fdw_private;
 	ForeignPath *path;
 
+	elog(LOG, "postgresGetForeignPaths");
 	/*
 	 * Create simplest ForeignScan path node and add it to baserel.  This path
 	 * corresponds to SeqScan path of regular tables (though depending on what
@@ -623,6 +636,7 @@ postgresGetForeignPlan(PlannerInfo *root,
 	bool		has_limit = false;
 	ListCell   *lc;
 
+	elog(LOG, "postgresGetForeignPlan");
 	/*
 	 * Get FDW private data created by postgresGetForeignUpperPaths(), if any.
 	 */
@@ -776,6 +790,11 @@ postgresGetForeignPlan(PlannerInfo *root,
 	}
 
 	/*
+	 * TODO: build the schema for KITE
+	 */
+
+
+	/*
 	 * Build the query string to be sent for execution, and identify
 	 * expressions to be sent as parameters.
 	 */
@@ -884,6 +903,7 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	int			rtindex;
 	int			numParams;
 
+	elog(LOG, "postgresBeginForeignScan");
 	/*
 	 * Do nothing in EXPLAIN (no ANALYZE) case.  node->fdw_state stays NULL.
 	 */
@@ -984,6 +1004,7 @@ postgresIterateForeignScan(ForeignScanState *node)
 	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
 	TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
 
+	elog(LOG, "postgresIterateForeignScan");
 	/*
 	 * In sync mode, if this is the first call after Begin or ReScan, we need
 	 * to create the cursor on the remote side.  In async mode, we would have
@@ -1030,6 +1051,7 @@ postgresReScanForeignScan(ForeignScanState *node)
 	char		sql[64];
 	PGresult   *res;
 
+	elog(LOG, "postgresReScanForeignScan");
 	/* If we haven't created the cursor yet, nothing to do. */
 	if (!fsstate->cursor_exists)
 		return;
@@ -1096,6 +1118,7 @@ postgresEndForeignScan(ForeignScanState *node)
 {
 	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
 
+	elog(LOG, "postgresEndForeignScan");
 	/* if fsstate is NULL, we are in EXPLAIN; nothing to do */
 	if (fsstate == NULL)
 		return;
@@ -1112,6 +1135,7 @@ postgresEndForeignScan(ForeignScanState *node)
 	/* MemoryContexts will be deleted automatically. */
 }
 
+#if 0
 /*
  * postgresExplainForeignScan
  *		Produce extra output for EXPLAIN of a ForeignScan on a foreign table
@@ -1119,7 +1143,6 @@ postgresEndForeignScan(ForeignScanState *node)
 static void
 postgresExplainForeignScan(ForeignScanState *node, ExplainState *es)
 {
-#if 0
 	ForeignScan *plan = castNode(ForeignScan, node->ss.ps.plan);
 	List	   *fdw_private = plan->fdw_private;
 
@@ -1218,8 +1241,8 @@ postgresExplainForeignScan(ForeignScanState *node, ExplainState *es)
 		sql = strVal(list_nth(fdw_private, FdwScanPrivateSelectSql));
 		ExplainPropertyText("Remote SQL", sql, es);
 	}
-#endif
 }
+#endif
 
 /*
  * estimate_path_cost_size
@@ -2166,6 +2189,7 @@ process_query_params(ExprContext *econtext,
 	reset_transmission_modes(nestlevel);
 }
 
+#if 0
 /*
  * postgresAnalyzeForeignTable
  *		Test whether analyzing this foreign table is supported
@@ -2226,7 +2250,10 @@ postgresAnalyzeForeignTable(Relation relation,
 
 	return true;
 }
+#endif
 
+
+#if 0
 /*
  * Acquire a random sample of rows from foreign table managed by postgres_fdw.
  *
@@ -2397,7 +2424,9 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 
 	return astate.numrows;
 }
+#endif
 
+#if 0
 /*
  * Collect sample rows from the result of query.
  *	 - Use all tuples in sample until target # of samples are collected.
@@ -2466,6 +2495,7 @@ analyze_row_processor(PGresult *res, int row, PgFdwAnalyzeState *astate)
 		MemoryContextSwitchTo(oldcontext);
 	}
 }
+#endif
 
 /*
  * Parse options from foreign server and apply them to fpinfo.
@@ -3216,6 +3246,7 @@ add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 	add_path(final_rel, (Path *) final_path);
 }
 
+#if 0
 /*
  * postgresIsForeignPathAsyncCapable
  *		Check whether a given ForeignPath node is async-capable.
@@ -3228,7 +3259,9 @@ postgresIsForeignPathAsyncCapable(ForeignPath *path)
 
 	return fpinfo->async_capable;
 }
+#endif
 
+#if 0
 /*
  * postgresForeignAsyncRequest
  *		Asynchronously request next tuple from a foreign PostgreSQL table.
@@ -3238,7 +3271,9 @@ postgresForeignAsyncRequest(AsyncRequest *areq)
 {
 	produce_tuple_asynchronously(areq, true);
 }
+#endif
 
+#if 0
 /*
  * postgresForeignAsyncConfigureWait
  *		Configure a file descriptor event for which we wish to wait.
@@ -3312,7 +3347,10 @@ postgresForeignAsyncConfigureWait(AsyncRequest *areq)
 	AddWaitEventToSet(set, WL_SOCKET_READABLE, PQsocket(fsstate->conn),
 					  NULL, areq);
 }
+#endif
 
+
+#if 0
 /*
  * postgresForeignAsyncNotify
  *		Fetch some more tuples from a file descriptor that becomes ready,
@@ -3352,7 +3390,9 @@ postgresForeignAsyncNotify(AsyncRequest *areq)
 
 	produce_tuple_asynchronously(areq, true);
 }
+#endif
 
+#if 0
 /*
  * Asynchronously produce next tuple from a foreign PostgreSQL table.
  */
@@ -3418,7 +3458,9 @@ produce_tuple_asynchronously(AsyncRequest *areq, bool fetch)
 		ExecAsyncRequestDone(areq, result);
 	}
 }
+#endif
 
+#if 0
 /*
  * Begin an asynchronous data fetch.
  *
@@ -3450,6 +3492,7 @@ fetch_more_data_begin(AsyncRequest *areq)
 	/* Remember that the request is in process */
 	fsstate->conn_state->pendingAreq = areq;
 }
+#endif
 
 /*
  * Process a pending asynchronous request.
@@ -3484,6 +3527,7 @@ process_pending_request(AsyncRequest *areq)
 	}
 }
 
+#if 0
 /*
  * Complete a pending asynchronous request.
  */
@@ -3507,6 +3551,7 @@ complete_pending_request(AsyncRequest *areq)
 		InstrUpdateTupleCount(areq->requestee->instrument,
 							  TupIsNull(areq->result) ? 0.0 : 1.0);
 }
+#endif
 
 /*
  * Create a tuple from the specified row of the PGresult.
