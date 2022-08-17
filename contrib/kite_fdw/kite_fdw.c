@@ -50,6 +50,8 @@
 #include "utils/sampling.h"
 #include "utils/selfuncs.h"
 
+#include "nodes/print.h"
+
 PG_MODULE_MAGIC;
 
 /* Default CPU cost to start up a foreign query. */
@@ -187,12 +189,14 @@ typedef struct ConversionLocation
 	ForeignScanState *fsstate;	/* plan node being processed, or NULL */
 } ConversionLocation;
 
+#if 0
 /* Callback argument for ec_member_matches_foreign */
 typedef struct
 {
 	Expr	   *current;		/* current expr, or NULL if not yet found */
 	List	   *already_used;	/* expressions already dealt with */
 } ec_member_foreign_arg;
+#endif
 
 /*
  * SQL functions
@@ -307,9 +311,6 @@ static void add_foreign_grouping_paths(PlannerInfo *root,
 									   RelOptInfo *input_rel,
 									   RelOptInfo *grouped_rel,
 									   GroupPathExtraData *extra);
-static void add_foreign_ordered_paths(PlannerInfo *root,
-									  RelOptInfo *input_rel,
-									  RelOptInfo *ordered_rel);
 static void add_foreign_final_paths(PlannerInfo *root,
 									RelOptInfo *input_rel,
 									RelOptInfo *final_rel,
@@ -476,6 +477,8 @@ postgresGetForeignRelSize(PlannerInfo *root,
 	 * sent to the remote and thus we wouldn't really need to retrieve the
 	 * columns used in them.  Doesn't seem worth detecting that case though.)
 	 */
+	elog_node_display(LOG, "BASE TARGET", (Node *) baserel->reltarget->exprs, true);
+
 	fpinfo->attrs_used = NULL;
 	pull_varattnos((Node *) baserel->reltarget->exprs, baserel->relid,
 				   &fpinfo->attrs_used);
@@ -2868,6 +2871,7 @@ postgresGetForeignUpperPaths(PlannerInfo *root, UpperRelationKind stage,
 {
 	PgFdwRelationInfo *fpinfo;
 
+	elog(LOG, "postgresGetForeignUpperPaths");
 	/*
 	 * If input rel is not safe to pushdown, then simply return as we cannot
 	 * perform any post-join operations on the foreign server.
@@ -2877,9 +2881,9 @@ postgresGetForeignUpperPaths(PlannerInfo *root, UpperRelationKind stage,
 		return;
 
 	/* Ignore stages we don't support; and skip any duplicate calls. */
-	if ((stage != UPPERREL_GROUP_AGG &&
-		 stage != UPPERREL_ORDERED &&
-		 stage != UPPERREL_FINAL) ||
+	/* KITE don't support ORDER BY */
+	if ((stage != UPPERREL_GROUP_AGG && 
+		stage != UPPERREL_FINAL) || 
 		output_rel->fdw_private)
 		return;
 
@@ -2891,13 +2895,12 @@ postgresGetForeignUpperPaths(PlannerInfo *root, UpperRelationKind stage,
 	switch (stage)
 	{
 		case UPPERREL_GROUP_AGG:
+			elog(LOG, "GROUP_AGG");
 			add_foreign_grouping_paths(root, input_rel, output_rel,
 									   (GroupPathExtraData *) extra);
 			break;
-		case UPPERREL_ORDERED:
-			add_foreign_ordered_paths(root, input_rel, output_rel);
-			break;
 		case UPPERREL_FINAL:
+			elog(LOG, "FINAL");
 			add_foreign_final_paths(root, input_rel, output_rel,
 									(FinalPathExtraData *) extra);
 			break;
@@ -2996,19 +2999,6 @@ add_foreign_grouping_paths(PlannerInfo *root, RelOptInfo *input_rel,
 
 	/* Add generated path into grouped_rel by add_path(). */
 	add_path(grouped_rel, (Path *) grouppath);
-}
-
-/*
- * add_foreign_ordered_paths
- *		Add foreign paths for performing the final sort remotely.
- *
- * Given input_rel contains the source-data Paths.  The paths are added to the
- * given ordered_rel.
- */
-static void
-add_foreign_ordered_paths(PlannerInfo *root, RelOptInfo *input_rel,
-						  RelOptInfo *ordered_rel)
-{
 }
 
 /*
