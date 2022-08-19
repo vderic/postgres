@@ -50,7 +50,9 @@
 #include "utils/sampling.h"
 #include "utils/selfuncs.h"
 
+#include "sockstream.h"
 #include "nodes/print.h"
+#include "xrg.h"
 
 PG_MODULE_MAGIC;
 
@@ -109,6 +111,10 @@ typedef struct PgFdwScanState
 	FmgrInfo   *param_flinfo;	/* output conversion functions for them */
 	List	   *param_exprs;	/* executable expressions for param values */
 	const char **param_values;	/* textual values of query parameters */
+
+	/* KITE: for storing result tuples */
+	sockstream_t *kitess;
+	xrg_vector_t **vectors;
 
 	/* for storing result tuples */
 	HeapTuple  *tuples;			/* array of currently-retrieved tuples */
