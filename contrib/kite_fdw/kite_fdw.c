@@ -53,6 +53,7 @@
 #include "sockstream.h"
 #include "nodes/print.h"
 #include "xrg.h"
+#include "dec.h"
 
 PG_MODULE_MAGIC;
 
@@ -337,6 +338,9 @@ kite_fdw_handler(PG_FUNCTION_ARGS)
 {
 	FdwRoutine *routine = makeNode(FdwRoutine);
 
+	__int128_t d128;
+	char *p;
+
 	/* Functions for scanning foreign tables */
 	routine->GetForeignRelSize = postgresGetForeignRelSize;
 	routine->GetForeignPaths = postgresGetForeignPaths;
@@ -403,6 +407,10 @@ kite_fdw_handler(PG_FUNCTION_ARGS)
 	routine->ForeignAsyncConfigureWait = postgresForeignAsyncConfigureWait;
 	routine->ForeignAsyncNotify = postgresForeignAsyncNotify;
 #endif
+	d128 = 123;
+	p = dec128_to_string(d128, 2);
+	elog(LOG, "decimal = %s", p);
+	if (p) free(p);
 
 	PG_RETURN_POINTER(routine);
 }
