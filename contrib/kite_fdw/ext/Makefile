@@ -8,7 +8,7 @@ ARROWDIR = $(ARROWZIP:.zip=)
 SOCKSTREAMTAR = sockstream-r220819.zip
 SOCKSTREAMDIR = $(SOCKSTREAMTAR:.zip=)
 
-all: $(SUBDIR) include/xrg.h include/arrow/api.h include/json-c/json.h include/sockstream.h
+all: $(SUBDIR) include/xrg.h include/arrow/api.h include/sockstream.h include/rapidjson
 
 $(SUBDIR):
 	mkdir $@
@@ -33,6 +33,13 @@ include/sockstream.h : tarball/$(SOCKSTREAMTAR)
 	rm -rf $(SOCKSTREAMDIR)
 	unzip -q tarball/$(SOCKSTREAMTAR)
 	make -C $(SOCKSTREAMDIR) install prefix=$(shell pwd)
+
+include/rapidjson: tarball/rapidjson-master.zip
+	rm -rf rapidjson-master
+	unzip -q tarball/rapidjson-master.zip
+	cp -r rapidjson-master/include/rapidjson include
+	rm -rf rapidjson-master
+
 
 wipe:
 	rm -rf bin include lib share $(XRGDIR) $(JSONDIR) $(ARROWDIR) $(SOCKSTREAMDIR)

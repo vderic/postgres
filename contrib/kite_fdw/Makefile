@@ -8,12 +8,13 @@ OBJS = \
 	option.o \
 	kite_fdw.o \
 	shippable.o \
-	dec.o
+	dec.o \
+	kite_client.o
 
 PGFILEDESC = "postgres_fdw - foreign data wrapper for PostgreSQL"
 
 PG_CPPFLAGS = -I$(libpq_srcdir) -Iext/include
-SHLIB_LINK_INTERNAL = $(libpq) -Lext/lib -lxrg  -larrow -larrow_bundled_dependencies -llz4 -lstdc++
+SHLIB_LINK_INTERNAL = $(libpq) -Lext/lib -lxrg  -larrow -larrow_bundled_dependencies -llz4 -lstdc++ -lpthread -std=c++11
 
 EXTENSION = kite_fdw
 DATA = kite_fdw--1.0.sql kite_fdw--1.0--1.1.sql

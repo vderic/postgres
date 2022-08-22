@@ -54,6 +54,7 @@
 #include "nodes/print.h"
 #include "xrg.h"
 #include "dec.h"
+#include "kite_client.h"
 
 PG_MODULE_MAGIC;
 
@@ -799,9 +800,6 @@ postgresGetForeignPlan(PlannerInfo *root,
 		}
 	}
 
-	/*
-	 * TODO: build the schema for KITE
-	 */
 
 
 	/*
@@ -816,6 +814,21 @@ postgresGetForeignPlan(PlannerInfo *root,
 
 	/* Remember remote_exprs for possible use by postgresPlanDirectModify */
 	fpinfo->final_remote_exprs = remote_exprs;
+
+	/*
+	 * TODO: build the schema for KITE
+	 */
+	{
+		RelOptInfo *relinfo = IS_UPPER_REL(foreignrel) ? fpinfo->outerrel : foreignrel;
+		RangeTblEntry *scanrte = planner_rt_fetch(relinfo->relid, root);
+		Relation scanrel = table_open(scanrte->relid, NoLock);
+		TupleDesc tupdesc = RelationGetDescr(scanrel);
+		char *json = kite_build_json(sql.data, tupdesc, 0, 1);
+		table_close(scanrel, NoLock);
+		elog(LOG, json);
+		if (json) free(json);
+	}
+       
 
 	/*
 	 * Build the fdw_private list that will be available to the executor.
