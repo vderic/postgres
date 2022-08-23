@@ -15,7 +15,7 @@ typedef struct kite_result_t {
 	
 	sockstream_t *ss;
 	int ncol;
-	xrg_vector_t *vec;
+	xrg_vector_t **vec;
 	int cursor;
 	int nrow;
 
@@ -28,7 +28,7 @@ void kite_destroy(sockstream_t *ss);
 
 kite_result_t *kite_get_result(sockstream_t *ss, int ncol, char *json);
 
-int kite_result_get_next(kite_result_t *res, int ncol, Datum *datum);
+bool kite_result_get_next(kite_result_t *res, int ncol, Datum *values, bool *isnulls);
 
 int kite_result_eos(kite_result_t);
 
