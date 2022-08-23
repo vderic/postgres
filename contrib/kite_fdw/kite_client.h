@@ -22,7 +22,9 @@ typedef struct kite_result_t {
 } kite_result_t;
 
 
-sockstream_t *kite_connect(char *host, int port);
+int kite_connect(sockstream_t **ss, char *host);
+
+void kite_destroy(sockstream_t *ss);
 
 kite_result_t *kite_get_result(sockstream_t *ss, int ncol, char *json);
 
