@@ -16,6 +16,7 @@ typedef struct kite_result_t {
 	sockstream_t *ss;
 	int ncol;
 	xrg_vector_t **vec;
+	Datum **datum;
 	int cursor;
 	int nrow;
 

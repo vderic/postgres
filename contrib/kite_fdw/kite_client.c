@@ -76,14 +76,13 @@ kite_result_t *kite_get_result(sockstream_t *ss, int ncol, char *json) {
 	res->ss = ss;
 	res->ncol = ncol;
 	res->vec = palloc0(ncol * sizeof(xrg_vector_t *));
+	res->datum = palloc0(ncol * sizeof(Datum *));
 	return 0;
 }
 
-static int kite_result_fill_column(kite_result_t *res, xrg_vector_t **retv) {
+static int kite_result_fill_column(kite_result_t *res, int cno) {
 	xrg_vector_t *v = 0;
 	sockbuf_t sockbuf;
-
-	*retv = 0;
 
 	sockbuf_init(&sockbuf);
 	
@@ -136,15 +135,15 @@ static int kite_result_fill_column(kite_result_t *res, xrg_vector_t **retv) {
                 buf += nbyte;
                 memcpy(buf, XRG_VECTOR_FLAG(v), nitem);
 
-		*retv = (xrg_vector_t *) buf;
+		res->vec[cno] = (xrg_vector_t *) buf;
         } else {
                 char *buf = palloc(sockbuf.msgsz);
                 memcpy(buf, sockbuf.buf, sockbuf.msgsz);
-		*retv = (xrg_vector_t *) buf;
+		res->vec[cno] = (xrg_vector_t *) buf;
         }
 
 	sockbuf_final(&sockbuf);
-	return (*retv)->header.nitem;
+	return res->vec[cno]->header.nitem;
 }
 
 
@@ -156,7 +155,7 @@ static bool kite_result_fill(kite_result_t *res, int ncol) {
 	/* fill all columns */
 	for (i = 0 ; i < ncol ; i++) {
 		// fill each column
-		ret = kite_result_fill_column(res, &res->vec[i]);
+		ret = kite_result_fill_column(res, i);
 		if (ret <= 0) {
 			// BYE or ERROR
 			res->cursor = 0;
@@ -202,10 +201,23 @@ static void kite_result_reset(kite_result_t *res) {
 			pfree(res->vec[i]);
 			res->vec[i] = 0;
 		}
+		if (res->datum[i]) {
+			pfree(res->datum[i]);
+			res->datum[i] = 0;
+		}
 	}
 }
 
-static void kite_result_get_next_datum(int ncol, Datum *values, bool *isnulls) {
+static void kite_result_decode_column(kite_result_t *res, int cno) {
+
+}
+
+static void kite_result_decode(kite_result_t *res) {
+
+
+}
+
+static void kite_result_get_next_datum(kite_result_t *res, int ncol, Datum *values, bool *isnulls) {
 
 }
 
@@ -219,10 +231,13 @@ bool kite_result_get_next(kite_result_t *res, int ncol, Datum *values, bool *isn
 		if (! ok) {
 			return false;
 		}
+
+		// TODO: decode
+		kite_result_decode(res);
 	}
 
 	if (kite_result_has_more(res)) {
-		kite_result_get_next_datum(ncol, values, isnulls);
+		kite_result_get_next_datum(res, ncol, values, isnulls);
 		return true;
 	}
 
