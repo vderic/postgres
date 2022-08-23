@@ -9,6 +9,7 @@ OBJS = \
 	kite_fdw.o \
 	shippable.o \
 	dec.o \
+	json.o \
 	kite_client.o
 
 PGFILEDESC = "postgres_fdw - foreign data wrapper for PostgreSQL"

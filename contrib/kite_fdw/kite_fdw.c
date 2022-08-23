@@ -54,6 +54,7 @@
 #include "nodes/print.h"
 #include "xrg.h"
 #include "dec.h"
+#include "json.h"
 #include "kite_client.h"
 
 PG_MODULE_MAGIC;
