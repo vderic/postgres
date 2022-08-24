@@ -371,8 +371,9 @@ void xrg_column_decode(xrg_column_t *c, FmgrInfo *flinfo, Oid ioparams, int32_t 
 int kite_connect(sockstream_t **ss, char *host) {
         struct addrinfo hints, *res;
 	int sockfd = 0;
+	char *hoststr = pstrdup(host);
 
-        char *port = strchr(host, ':');
+        char *port = strchr(hoststr, ':');
         if (port == NULL) {
                 elog(LOG, "kite: host should be in hostname:port format");
                 return 1;
