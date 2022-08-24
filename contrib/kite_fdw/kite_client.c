@@ -364,16 +364,23 @@ void kite_result_decode(kite_result_t *res, AttInMetadata *attinmeta, List *retr
 	}
 }
 
+int kite_result_scan_next(kite_result_t *res, int ncol, int row, Datum *datums, bool *isnulls) {
+	int i = 0; 
 
-Datum kite_result_get_value(kite_result_t *res, int row, int cno) {
-	xrg_column_t *c = res->cols[cno];
-	return xrg_column_get_value(c, row);
+	if (res->cursor >= res->nrow) {
+		return -1;
+	}
+
+	for (i = 0 ; i < ncol ; i++) {
+		xrg_column_t *c = res->cols[i];
+		datums[i] = xrg_column_get_value(c, row);
+		isnulls[i] = xrg_column_get_isnull(c, row);
+	}
+
+	res->cursor++;
+	return 0;
 }
 
-bool kite_result_get_isnull(kite_result_t *res, int row, int cno) {
-	xrg_column_t *c = res->cols[cno];
-	return xrg_column_get_isnull(c, row);
-}
 
 int kite_result_eos(kite_result_t) {
 
