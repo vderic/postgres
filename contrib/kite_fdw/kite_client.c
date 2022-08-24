@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+
 #include "kite_client.h"
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -10,6 +11,7 @@
 #include <unistd.h>
 #include "lz4.h"
 
+#include "utils/timestamp.h"
 /*
 bool kite_result_scan_next(kite_result_t *res,
                 int ncol,
@@ -73,6 +75,19 @@ static inline Datum decode_double(char *data, int32_t it) {
 	return Float8GetDatum(p[it]);
 }
 
+static inline Datum decode_date(int32_t d) {
+        d -= (POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE);
+        return Int32GetDatum(d);
+}
+static inline Datum decode_time(int64_t t) {
+        return Int64GetDatum(t);
+}
+
+static Datum decode_timestamp(int64_t ts) {
+        Timestamp epoch_ts = SetEpochTimestamp();
+        ts += epoch_ts;
+        return Int64GetDatum(ts);
+}
 
 
 /* xrg_column_t */
