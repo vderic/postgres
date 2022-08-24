@@ -364,7 +364,7 @@ void kite_result_decode(kite_result_t *res, AttInMetadata *attinmeta, List *retr
 	}
 }
 
-int kite_result_scan_next(kite_result_t *res, int ncol, int row, Datum *datums, bool *isnulls) {
+int kite_result_scan_next(kite_result_t *res, int ncol, Datum *datums, bool *isnulls) {
 	int i = 0; 
 
 	if (res->cursor >= res->nrow) {
@@ -373,8 +373,8 @@ int kite_result_scan_next(kite_result_t *res, int ncol, int row, Datum *datums, 
 
 	for (i = 0 ; i < ncol ; i++) {
 		xrg_column_t *c = res->cols[i];
-		datums[i] = xrg_column_get_value(c, row);
-		isnulls[i] = xrg_column_get_isnull(c, row);
+		datums[i] = xrg_column_get_value(c, res->cursor);
+		isnulls[i] = xrg_column_get_isnull(c, res->cursor);
 	}
 
 	res->cursor++;

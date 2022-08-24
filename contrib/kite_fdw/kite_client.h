@@ -55,7 +55,7 @@ bool kite_result_fill(kite_result_t *res, int ncol);
 
 void kite_result_decode(kite_result_t *res, AttInMetadata *attinmeta, List *retrieved_attrs);
 
-int kite_result_scan_next(kite_result_t *res, int ncol, int row, Datum *datums, bool *isnulls);
+int kite_result_scan_next(kite_result_t *res, int ncol, Datum *datums, bool *isnulls);
 
 int kite_result_eos(kite_result_t);
 
