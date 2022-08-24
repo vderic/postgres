@@ -7,10 +7,12 @@
 extern "C" {
 #endif
 
-/* decimal */
-char *dec128_to_string(__int128_t i128, int scale);
+#define MAX_DEC128_PRECISION 38
 
-char *dec64_to_string(int64_t d64, int scale);
+/* decimal */
+void dec128_to_string(__int128_t i128, int scale, char *ret);
+
+void dec64_to_string(int64_t d64, int scale, char *ret);
 
 #ifdef __cplusplus
 }

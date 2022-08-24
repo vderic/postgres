@@ -305,8 +305,9 @@ void xrg_column_decode(xrg_column_t *c, FmgrInfo *flinfo, Oid ioparams, int32_t 
 			if (flag[i] & XRG_FLAG_NULL) {
 				datumv[i] = 0;
 			} else {
+				char s[MAX_DEC128_PRECISION+2];
 				int64_t v = p[i];
-				char *s = dec64_to_string(v, scale);
+				dec64_to_string(v, scale, s);
 				/*
                                 FmgrInfo flinfo;
                                 memset(&flinfo, 0, sizeof(FmgrInfo));
@@ -315,7 +316,6 @@ void xrg_column_decode(xrg_column_t *c, FmgrInfo *flinfo, Oid ioparams, int32_t 
                                 flinfo.fn_strict = true;
 				*/
                                 datumv[i] = InputFunctionCall(flinfo, s, ioparams, typmod);
-				if (s) free(s);
 			}
 		}
 		return;
@@ -332,8 +332,9 @@ void xrg_column_decode(xrg_column_t *c, FmgrInfo *flinfo, Oid ioparams, int32_t 
 			if (flag[i] & XRG_FLAG_NULL) {
 				datumv[i] = 0;
 			} else {
+				char s[MAX_DEC128_PRECISION+2];
 				__int128_t v = p[i];
-				char *s = dec128_to_string(v, scale);
+				dec128_to_string(v, scale, s);
 				/*
                                 FmgrInfo flinfo;
                                 memset(&flinfo, 0, sizeof(FmgrInfo));
@@ -342,7 +343,6 @@ void xrg_column_decode(xrg_column_t *c, FmgrInfo *flinfo, Oid ioparams, int32_t 
                                 flinfo.fn_strict = true;
 				*/
                                 datumv[i] = InputFunctionCall(flinfo, s, ioparams, typmod);
-				if (s) free(s);
 			}
 		}
 		return;
