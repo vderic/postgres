@@ -14,6 +14,7 @@
 
 #include "utils/timestamp.h"
 #include "utils/numeric.h"
+#include "utils/fmgrprotos.h"
 
 /*
 bool kite_result_scan_next(kite_result_t *res,
