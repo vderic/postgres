@@ -7,16 +7,34 @@ extern "C" {
 #endif
 
 #include "postgres.h"
+#include "funcapi.h"
 #include "access/tupdesc.h"
 #include "sockstream.h"
 #include "xrg.h"
+
+typedef struct xrg_column_t {
+	xrg_vector_t *v;
+	Datum *datumv;
+} xrg_column_t;
+
+xrg_column_t *xrg_column_create(xrg_vector_t *v);
+
+void xrg_column_final(xrg_column_t *col);
+
+int xrg_column_fill(xrg_column_t **c, sockstream_t *ss);
+
+int xrg_column_decode(xrg_column_t *c, int typmod);
+
+Datum xrg_column_get_value(xrg_column_t *c, int row);
+
+bool xrg_column_get_isnull(xrg_column_t *c, int row);
+
 
 typedef struct kite_result_t {
 	
 	sockstream_t *ss;
 	int ncol;
-	xrg_vector_t **vec;
-	Datum **datum;
+	xrg_column_t **cols;
 	int cursor;
 	int nrow;
 
@@ -29,7 +47,17 @@ void kite_destroy(sockstream_t *ss);
 
 kite_result_t *kite_get_result(sockstream_t *ss, int ncol, char *json);
 
-bool kite_result_get_next(kite_result_t *res, int ncol, Datum *values, bool *isnulls);
+bool kite_result_has_more(kite_result_t *res);
+
+void kite_result_reset(kite_result_t *res);
+
+bool kite_result_fill(kite_result_t *res, int ncol);
+
+void kite_result_decode(kite_result_t *res, AttInMetadata *attinmeta, List *retrieved_attrs);
+
+Datum kite_result_get_value(kite_result_t *res, int row, int cno);
+
+bool kite_result_get_isnull(kite_result_t *res, int row, int cno);
 
 int kite_result_eos(kite_result_t);
 
