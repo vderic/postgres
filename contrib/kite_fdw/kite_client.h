@@ -23,7 +23,7 @@ void xrg_column_final(xrg_column_t *col);
 
 int xrg_column_fill(xrg_column_t **c, sockstream_t *ss);
 
-int xrg_column_decode(xrg_column_t *c, int typmod);
+void xrg_column_decode(xrg_column_t *c, FmgrInfo *flinfo, Oid ioparams, int32_t typmod);
 
 Datum xrg_column_get_value(xrg_column_t *c, int row);
 

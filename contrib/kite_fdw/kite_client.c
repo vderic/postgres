@@ -10,8 +10,11 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include "lz4.h"
+#include "dec.h"
 
 #include "utils/timestamp.h"
+#include "utils/numeric.h"
+
 /*
 bool kite_result_scan_next(kite_result_t *res,
                 int ncol,
@@ -228,15 +231,139 @@ int xrg_column_fill(xrg_column_t **c, sockstream_t *ss) {
 	return (*c)->v->header.nitem;
 }
 
-int xrg_column_decode(xrg_column_t *c, int typmod) {
+void xrg_column_decode(xrg_column_t *c, FmgrInfo *flinfo, Oid ioparams, int32_t typmod) {
 
-	if (c->v->header.ltyp == XRG_LTYP_NONE) {
-		return 0;
+	xrg_vector_t *v = c->v;
+	Datum *datumv = c->datumv;
+	int16_t ltyp = c->v->header.ltyp;
+	int16_t ptyp = c->v->header.ptyp;
+	int nitem = c->v->header.nitem;
+
+	switch (ltyp) {
+	case XRG_LTYP_NONE:
+		// primitive type. no decode here
+		return;
+	case XRG_LTYP_DATE: 
+	{
+		int32_t *p = (int32_t *) XRG_VECTOR_DATA(v);
+		char *flag = XRG_VECTOR_FLAG(v);
+		int i = 0;
+		for (i = 0 ; i < nitem; i++) {
+			datumv[i] = (flag[i] & XRG_FLAG_NULL) ? 0 : decode_date(p[i]);
+		}
+	}
+	return;
+	case XRG_LTYP_TIME:
+	{
+		int64_t *p = (int64_t *) XRG_VECTOR_DATA(v);
+		char *flag = XRG_VECTOR_FLAG(v);
+		int i = 0;
+		for (i = 0 ; i < nitem; i++) {
+			datumv[i] = (flag[i] & XRG_FLAG_NULL) ? 0 : decode_time(p[i]);
+		}
+	}
+	return;
+	case XRG_LTYP_TIMESTAMP:
+	{
+		int64_t *p = (int64_t *) XRG_VECTOR_DATA(v);
+		char *flag = XRG_VECTOR_FLAG(v);
+		int i = 0;
+		for (i = 0 ; i < nitem; i++) {
+			datumv[i] = (flag[i] & XRG_FLAG_NULL) ? 0 : decode_timestamp(p[i]);
+		}
+	}
+	return;
+	case XRG_LTYP_INTERVAL:
+	{
+		__int128_t *p = (__int128_t *) XRG_VECTOR_DATA(v);
+		char *flag = XRG_VECTOR_FLAG(v);
+		int i = 0;
+		for (i = 0 ; i < nitem; i++) {
+			datumv[i] = (flag[i] & XRG_FLAG_NULL) ? 0 : PointerGetDatum(&p[i]);
+		}
+	}
+	return;
+	case XRG_LTYP_DECIMAL:
+	case XRG_LTYP_STRING:
+	break;
+	default:
+	{
+		elog(ERROR, "invalid xrg logical type %d", ltyp);
+		return;
+
+	}
 	}
 
-	// decode here
+	if (ltyp == XRG_LTYP_DECIMAL && ptyp == XRG_PTYP_INT64) {
+		int64_t *p = (int64_t *) XRG_VECTOR_DATA(v);
+		char *flag = XRG_VECTOR_FLAG(v);
+		int scale = v->header.scale;
+		int precision = v->header.precision;
+		int i = 0;
 
-	return 0;
+		for (i = 0 ; i < nitem ; i++) {
+			if (flag[i] & XRG_FLAG_NULL) {
+				datumv[i] = 0;
+			} else {
+				int64_t v = p[i];
+				char *s = dec64_to_string(v, scale);
+				/*
+                                FmgrInfo flinfo;
+                                memset(&flinfo, 0, sizeof(FmgrInfo));
+                                flinfo.fn_addr = numeric_in;
+                                flinfo.fn_nargs = 3;
+                                flinfo.fn_strict = true;
+				*/
+                                datumv[i] = InputFunctionCall(flinfo, s, ioparams, typmod);
+				if (s) free(s);
+			}
+		}
+		return;
+	}
+
+	if (ltyp == XRG_LTYP_DECIMAL && ptyp == XRG_PTYP_INT128) {
+		__int128_t *p = (__int128_t *) XRG_VECTOR_DATA(v);
+		char *flag = XRG_VECTOR_FLAG(v);
+		int scale = v->header.scale;
+		int precision = v->header.precision;
+		int i = 0;
+
+		for (i = 0 ; i < nitem ; i++) {
+			if (flag[i] & XRG_FLAG_NULL) {
+				datumv[i] = 0;
+			} else {
+				__int128_t v = p[i];
+				char *s = dec128_to_string(v, scale);
+				/*
+                                FmgrInfo flinfo;
+                                memset(&flinfo, 0, sizeof(FmgrInfo));
+                                flinfo.fn_addr = numeric_in;
+                                flinfo.fn_nargs = 3;
+                                flinfo.fn_strict = true;
+				*/
+                                datumv[i] = InputFunctionCall(flinfo, s, ioparams, typmod);
+				if (s) free(s);
+			}
+		}
+		return;
+
+	}
+
+        if (ltyp == XRG_LTYP_STRING && ptyp == XRG_PTYP_BYTEA) {
+                char *nextptr = XRG_VECTOR_DATA(v);
+                char *flag = XRG_VECTOR_FLAG(v);
+                for (int i = 0; i < nitem; i++) {
+                        int sz = xrg_bytea_len(nextptr);
+                        if (flag[i] & XRG_FLAG_NULL) {
+                                datumv[i] = 0;
+                        } else {
+                                SET_VARSIZE(nextptr, sz + VARHDRSZ);
+                                datumv[i] = PointerGetDatum(nextptr);
+                        }
+                        nextptr += sz + 4;
+                }
+                return;
+        }
 }
 
 
@@ -373,7 +500,7 @@ void kite_result_decode(kite_result_t *res, AttInMetadata *attinmeta, List *retr
 	foreach (lc, retrieved_attrs) {
 		int i = lfirst_int(lc);
 		xrg_column_t *c = res->cols[j];
-		xrg_column_decode(c, attinmeta->atttypmods[i-1]);
+		xrg_column_decode(c, &attinmeta->attinfuncs[i-1], attinmeta->attioparams[i-1], attinmeta->atttypmods[i-1]);
 
 		j++;
 	}
