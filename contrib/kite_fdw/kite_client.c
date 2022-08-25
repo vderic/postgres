@@ -98,13 +98,13 @@ static Datum decode_timestamp(int64_t ts) {
 xrg_column_t *xrg_column_create(xrg_vector_t *v) {
 	int nitem = v->header.nitem;
 	int16_t ltyp = v->header.ltyp;
-	xrg_column_t *c = palloc(sizeof(xrg_column_t));
+	xrg_column_t *c = malloc(sizeof(xrg_column_t));
 	c->v = v;
 	
 	if (ltyp == XRG_LTYP_NONE) {
 		c->datumv = 0;
 	} else {
-		c->datumv = palloc(nitem * sizeof(Datum));
+		c->datumv = malloc(nitem * sizeof(Datum));
 	}
 
 	return c;
@@ -115,12 +115,12 @@ void xrg_column_final(xrg_column_t *c) {
 		return;
 	}
 	if (c->datumv) {
-		pfree(c->datumv);
+		free(c->datumv);
 	}
 	if (c->v) {
-		pfree(c->v);
+		free(c->v);
 	}
-	pfree(c);
+	free(c);
 }
 
 Datum xrg_column_get_value(xrg_column_t *c, int row) {
@@ -165,48 +165,16 @@ bool xrg_column_get_isnull(xrg_column_t *c, int row) {
 }
 
 
-int xrg_column_fill(xrg_column_t **c, sockstream_t *ss) {
+int xrg_column_fill(xrg_column_t **c, sockbuf_t *sockbuf) {
 	xrg_vector_t *v = 0;
-	sockbuf_t sockbuf;
-
 	*c = 0;
-	sockbuf_init(&sockbuf);
-	
-	if (sockstream_recv(ss, &sockbuf)) {
-		elog(ERROR, "%s", sockstream_errmsg(ss));
-		sockbuf_final(&sockbuf);
-		return -1;
-	}
 
-	if (memcmp(sockbuf.msgty, "BYE_", 4) == 0) {
-		sockbuf_final(&sockbuf);
-		return 0;
-	}
-
-	if (memcmp(sockbuf.msgty, "ERR_", 4) == 0) {
-		elog(ERROR, "%s", sockbuf.buf);
-		sockbuf_final(&sockbuf);
-		return -1;
-	}
-
-	if (memcmp(sockbuf.msgty, "VEC_", 4) != 0) {
-		elog(ERROR, "VEC_ expected");
-		sockbuf_final(&sockbuf);
-		return -2;
-	}
-
-	if (sockbuf.msgsz == 0) {
-		elog(ERROR, "sockstream_recv: VEC_ with size ZERO");
-		sockbuf_final(&sockbuf);
-		return -3;
-	}
-
-	v = (xrg_vector_t *) sockbuf.buf;
+	v = (xrg_vector_t *) sockbuf->buf;
 	if (xrg_vector_is_compressed(v)) {
 		int ret = 0;
                 int newsz = xrg_align(16, sizeof(v->header) + v->header.nbyte + v->header.nitem);
 
-                char *buf = palloc(newsz);
+                char *buf = malloc(newsz);
                 int zbyte = v->header.zbyte;
                 int nbyte = v->header.nbyte;
                 int nitem = v->header.nitem;
@@ -223,12 +191,11 @@ int xrg_column_fill(xrg_column_t **c, sockstream_t *ss) {
 
 		*c = xrg_column_create((xrg_vector_t *) buf);
         } else {
-                char *buf = palloc(sockbuf.msgsz);
-                memcpy(buf, sockbuf.buf, sockbuf.msgsz);
+                char *buf = malloc(sockbuf->msgsz);
+                memcpy(buf, sockbuf->buf, sockbuf->msgsz);
 		*c = xrg_column_create((xrg_vector_t *) buf);
         }
 
-	sockbuf_final(&sockbuf);
 	return (*c)->v->header.nitem;
 }
 
@@ -418,81 +385,106 @@ void kite_destroy(sockstream_t *ss) {
 	sockstream_destroy(ss);
 }
 
-kite_result_t *kite_get_result(sockstream_t *ss, int ncol, char *json) {
-	kite_result_t *res = 0;
+int kite_exec(sockstream_t *ss, char *json) {
 
         if (sockstream_send(ss, "KIT1", 0, 0)) {
                 elog(ERROR, "%s", sockstream_errmsg(ss));
-                return 0;
+                return 1;
         }
 
         if (sockstream_send(ss, "JSON", strlen(json), json)) {
                 elog(ERROR, "%s", sockstream_errmsg(ss));
-                return 0;
+                return 2;
         }
 
-	res = palloc0(sizeof(kite_result_t));
-	res->ss = ss;
-	res->ncol = ncol;
-	res->cols = palloc0(ncol * sizeof(xrg_column_t *));
+        return 0;
+}
+
+kite_result_t *kite_get_result(sockstream_t *ss) {
+	kite_result_t *res = 0;
+
+	res = malloc(sizeof(kite_result_t));
+	res->ncol = 0;
+	res->nrow = 0;
+	res->cols = 0;
+
+	kite_result_fill(ss, res);
+
 	return res;
 }
 
-bool kite_result_fill(kite_result_t *res, int ncol) {
+bool kite_result_fill(sockstream_t *ss, kite_result_t *res) {
 	int i = 0, ret = 0;
 	int32_t nrow = 0;
 	sockbuf_t sockbuf;
+	bool success = false;
+	res->ncol = 0;
+	res->nrow = 0;
 
-	/* fill all columns */
-	for (i = 0 ; i < ncol ; i++) {
-		// fill each column
-		ret = xrg_column_fill(&res->cols[i], res->ss);
-		if (ret <= 0) {
-			// BYE or ERROR
-			res->cursor = 0;
-			res->nrow = 0;
-			sockbuf_final(&sockbuf);
-			return false;
-		}
-		Assert(nrow == res->cols[i]->v->header.nitem);
-		nrow = res->cols[i]->v->header.nitem;
-	}
-
-	/* check (VEC_ and size == 0) for end of row group */
 	sockbuf_init(&sockbuf);
+	/* fill all columns */
+	do {
+		if (sockstream_recv(ss, &sockbuf)) {
+			elog(ERROR, "sockstream_recv failure.");
+			goto done;
+		}
 
-	if (sockstream_recv(res->ss, &sockbuf)) {
-		elog(ERROR, "sockstream_recv: not end of rowgroup. expected VEC_ with zero size");
-		sockbuf_final(&sockbuf);
-		return false;
-	}
+		if (memcmp(sockbuf.msgty, "BYE_", 4) == 0) {
+			success = true;
+			goto done;
+		}
 
-	Assert(memcmp(sockbuf.msgty, "VEC_") == 0 && sockbuf.msgsz == 0);
+		if (memcmp(sockbuf.msgty, "ERR_", 4) == 0) {
+			elog(ERROR, "%s", sockbuf.buf);
+			goto done;
+		}
 
-	sockbuf_final(&sockbuf);
+		if (memcmp(sockbuf.msgty, "VEC_", 4) != 0) {
+			elog(ERROR, "VEC_ expected");
+			goto done;
+		}
 
-	res->cursor = 0;
+		if (sockbuf.msgsz > 0) {
+			xrg_column_t *c = 0;
+			ret = xrg_column_fill(&c, &sockbuf);
+			if (nrow == 0) {
+				nrow = ret;
+			}
+
+			if (nrow != ret) {
+				elog(ERROR, "VECTOR: number of rows not match between columns");
+				goto done;
+			}
+
+			if (res->cols == 0) {
+				res->cols = malloc(sizeof(xrg_column_t *));
+			} else {
+				res->cols = realloc(res->cols, (i+1) * sizeof(xrg_column_t *));
+			}
+
+			res->cols[i] = c;
+
+			i++;
+		}
+
+	} while (sockbuf.msgsz == 0);
+
+
+	res->ncol = i;
 	res->nrow = nrow;
 
-	return true;
+done:
+	sockbuf_final(&sockbuf);
+	return success;
 
 }
 
-bool kite_result_has_more(kite_result_t *res) {
-
-	return (res->cursor < res->nrow);
+int kite_result_get_nfield(kite_result_t *res) {
+	return res->ncol;
 }
 
-
-void kite_result_reset(kite_result_t *res) {
-
-	int i = 0 ;
-	for (i = 0 ; i < res->ncol ; i++) {
-		if (res->cols[i]) {
-			xrg_column_final(res->cols[i]);
-			res->cols[i] = 0;
-		}
-	}
+int kite_result_get_nrow(kite_result_t *res) {
+	return res->nrow;
 }
 
 void kite_result_decode(kite_result_t *res, AttInMetadata *attinmeta, List *retrieved_attrs) {
@@ -508,30 +500,33 @@ void kite_result_decode(kite_result_t *res, AttInMetadata *attinmeta, List *retr
 	}
 }
 
-int kite_result_scan_next(kite_result_t *res, int ncol, Datum *datums, bool *isnulls) {
+int kite_result_scan_next(kite_result_t *res, int row, Datum *datums, bool *isnulls) {
 	int i = 0; 
 
-	if (res->cursor >= res->nrow) {
+	if (row >= res->nrow) {
 		return -1;
 	}
 
-	for (i = 0 ; i < ncol ; i++) {
+	for (i = 0 ; i < res->ncol ; i++) {
 		xrg_column_t *c = res->cols[i];
-		datums[i] = xrg_column_get_value(c, res->cursor);
-		isnulls[i] = xrg_column_get_isnull(c, res->cursor);
+		datums[i] = xrg_column_get_value(c, row);
+		isnulls[i] = xrg_column_get_isnull(c, row);
 	}
-
-	res->cursor++;
-	return 0;
-}
-
-
-int kite_result_eos(kite_result_t) {
 
 	return 0;
 }
 
 void kite_result_destroy(kite_result_t *res) {
-
+	if (res) {
+		if (res->cols) {
+			int i = 0;
+			for (i = 0; i < res->ncol ; i++) {
+				xrg_column_final(res->cols[i]);
+				res->cols[i] = 0;
+			}
+			free(res->cols);
+		}
+		free(res);
+	}
 }
 
