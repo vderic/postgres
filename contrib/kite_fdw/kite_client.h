@@ -47,10 +47,6 @@ int kite_exec(sockstream_t *ss, char *json);
 
 kite_result_t *kite_get_result(sockstream_t *ss);
 
-bool kite_result_has_more(kite_result_t *res);
-
-void kite_result_reset(kite_result_t *res);
-
 bool kite_result_fill(sockstream_t *ss, kite_result_t *res);
 
 void kite_result_decode(kite_result_t *res, AttInMetadata *attinmeta, List *retrieved_attrs);

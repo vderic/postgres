@@ -105,8 +105,13 @@ typedef struct PgFdwScanState
 	char	   *query;			/* text of SELECT command */
 	List	   *retrieved_attrs;	/* list of retrieved attribute numbers */
 
+
 	/* for remote query execution */
+#ifdef KITE_CONNECT
+	sockstream_t *sockstream;       /* kite connectino for the scan */
+#else
 	PGconn	   *conn;			/* connection for the scan */
+#endif
 	PgFdwConnState *conn_state; /* extra per-connection state */
 	unsigned int cursor_number; /* quasi-unique ID for my cursor */
 	bool		cursor_exists;	/* have we created the cursor? */
@@ -114,10 +119,6 @@ typedef struct PgFdwScanState
 	FmgrInfo   *param_flinfo;	/* output conversion functions for them */
 	List	   *param_exprs;	/* executable expressions for param values */
 	const char **param_values;	/* textual values of query parameters */
-
-	/* KITE: for storing result tuples */
-	sockstream_t *kitess;
-	xrg_vector_t **vectors;
 
 	/* for storing result tuples */
 	HeapTuple  *tuples;			/* array of currently-retrieved tuples */
@@ -306,6 +307,16 @@ static void produce_tuple_asynchronously(AsyncRequest *areq, bool fetch);
 static void fetch_more_data_begin(AsyncRequest *areq);
 static void complete_pending_request(AsyncRequest *areq);
 #endif
+#ifdef KITE_CONNECT
+static HeapTuple make_tuple_from_result_row(kite_result_t *res,
+											int row,
+											Relation rel,
+											AttInMetadata *attinmeta,
+											List *retrieved_attrs,
+											ForeignScanState *fsstate,
+											MemoryContext temp_context);
+
+#else
 static HeapTuple make_tuple_from_result_row(PGresult *res,
 											int row,
 											Relation rel,
@@ -313,6 +324,8 @@ static HeapTuple make_tuple_from_result_row(PGresult *res,
 											List *retrieved_attrs,
 											ForeignScanState *fsstate,
 											MemoryContext temp_context);
+#endif
+
 static void conversion_error_callback(void *arg);
 static bool foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel,
 								Node *havingQual);
@@ -647,6 +660,7 @@ postgresGetForeignPlan(PlannerInfo *root,
 	bool		has_final_sort = false;
 	bool		has_limit = false;
 	ListCell   *lc;
+	char       *json = 0;
 
 	elog(LOG, "postgresGetForeignPlan");
 	/*
@@ -816,6 +830,7 @@ postgresGetForeignPlan(PlannerInfo *root,
 	/* Remember remote_exprs for possible use by postgresPlanDirectModify */
 	fpinfo->final_remote_exprs = remote_exprs;
 
+#ifdef KITE_CONNECT
 	/*
 	 * TODO: build the schema for KITE
 	 */
@@ -824,10 +839,14 @@ postgresGetForeignPlan(PlannerInfo *root,
 		RangeTblEntry *scanrte = planner_rt_fetch(relinfo->relid, root);
 		Relation scanrel = table_open(scanrte->relid, NoLock);
 		TupleDesc tupdesc = RelationGetDescr(scanrel);
-		char *json = kite_build_json(sql.data, tupdesc, 0, 1);
+		char *js = kite_build_json(sql.data, tupdesc, 0, 1);
+		if (js) {
+			json = pstrdup(js);
+			elog(LOG, json);
+			free(js);
+		}
+
 		table_close(scanrel, NoLock);
-		elog(LOG, json);
-		if (json) free(json);
 	}
        
 
@@ -835,9 +854,14 @@ postgresGetForeignPlan(PlannerInfo *root,
 	 * Build the fdw_private list that will be available to the executor.
 	 * Items in the list must match order in enum FdwScanPrivateIndex.
 	 */
+	fdw_private = list_make3(makeString(json),
+							 retrieved_attrs,
+							 makeInteger(fpinfo->fetch_size));
+#else
 	fdw_private = list_make3(makeString(sql.data),
 							 retrieved_attrs,
 							 makeInteger(fpinfo->fetch_size));
+#endif
 	if (IS_JOIN_REL(foreignrel) || IS_UPPER_REL(foreignrel))
 		fdw_private = lappend(fdw_private,
 							  makeString(fpinfo->relation_name));
@@ -957,6 +981,11 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	table = GetForeignTable(rte->relid);
 	user = GetUserMapping(userid, table->serverid);
 
+#if KITE_CONNECT
+	fsstate->sockstream = GetConnection(user, false, &fsstate->conn_state);
+	fsstate->cursor_exists = false;
+
+#else
 	/*
 	 * Get connection to the foreign server.  Connection manager will
 	 * establish new connection if necessary.
@@ -966,6 +995,7 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	/* Assign a unique ID for my cursor */
 	fsstate->cursor_number = GetCursorNumber(fsstate->conn);
 	fsstate->cursor_exists = false;
+#endif
 
 	/* Get private info created by planner functions. */
 	fsstate->query = strVal(list_nth(fsplan->fdw_private,
@@ -1071,6 +1101,11 @@ postgresIterateForeignScan(ForeignScanState *node)
 static void
 postgresReScanForeignScan(ForeignScanState *node)
 {
+#ifdef KITE_CONNECT
+	elog(ERROR, "ReScan not supported by kite");
+	return;
+
+#else
 	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
 	char		sql[64];
 	PGresult   *res;
@@ -1131,6 +1166,7 @@ postgresReScanForeignScan(ForeignScanState *node)
 	fsstate->next_tuple = 0;
 	fsstate->fetch_ct_2 = 0;
 	fsstate->eof_reached = false;
+#endif
 }
 
 /*
@@ -1147,6 +1183,11 @@ postgresEndForeignScan(ForeignScanState *node)
 	if (fsstate == NULL)
 		return;
 
+#ifdef KITE_CONNECT
+	ReleaseConnection(fsstate->sockstream);
+	fsstate->sockstream = NULL;
+
+#else
 	/* Close the cursor if open, to prevent accumulation of cursors */
 	if (fsstate->cursor_exists)
 		close_cursor(fsstate->conn, fsstate->cursor_number,
@@ -1155,6 +1196,7 @@ postgresEndForeignScan(ForeignScanState *node)
 	/* Release remote connection */
 	ReleaseConnection(fsstate->conn);
 	fsstate->conn = NULL;
+#endif
 
 	/* MemoryContexts will be deleted automatically. */
 }
@@ -1313,7 +1355,11 @@ estimate_path_cost_size(PlannerInfo *root,
 		List	   *remote_param_join_conds;
 		List	   *local_param_join_conds;
 		StringInfoData sql;
+#ifdef KITE_CONNECT
+		sockstream_t *sockstream;
+#else
 		PGconn	   *conn;
+#endif
 		Selectivity local_sel;
 		QualCost	local_cost;
 		List	   *fdw_scan_tlist = NIL;
@@ -1357,10 +1403,14 @@ estimate_path_cost_size(PlannerInfo *root,
 								false, &retrieved_attrs, NULL);
 
 		/* Get the remote estimate */
+#ifdef KITE_CONNECT
+
+#else
 		conn = GetConnection(fpinfo->user, false, NULL);
 		get_remote_estimate(sql.data, conn, &rows, &width,
 							&startup_cost, &total_cost);
 		ReleaseConnection(conn);
+#endif
 
 		retrieved_rows = rows;
 
@@ -1891,9 +1941,14 @@ create_cursor(ForeignScanState *node)
 	ExprContext *econtext = node->ss.ps.ps_ExprContext;
 	int			numParams = fsstate->numParams;
 	const char **values = fsstate->param_values;
+#ifdef KITE_CONNECT
+	sockstream_t *sockstream = fsstate->sockstream;
+
+#else
 	PGconn	   *conn = fsstate->conn;
 	StringInfoData buf;
 	PGresult   *res;
+#endif
 
 	/* First, process a pending asynchronous request, if any. */
 	if (fsstate->conn_state->pendingAreq)
@@ -1918,6 +1973,23 @@ create_cursor(ForeignScanState *node)
 		MemoryContextSwitchTo(oldcontext);
 	}
 
+#if KITE_CONNECT
+
+	if (kite_exec(sockstream, fsstate->query) != 0) {
+		elog(ERROR, "kite_get_result failed");
+		return;
+	}
+
+	/* Mark the cursor as created, and show no tuples have been retrieved */
+	fsstate->cursor_exists = true;
+	fsstate->tuples = NULL;
+	fsstate->num_tuples = 0;
+	fsstate->next_tuple = 0;
+	fsstate->fetch_ct_2 = 0;
+	fsstate->eof_reached = false;
+	
+
+#else
 	/* Construct the DECLARE CURSOR command */
 	initStringInfo(&buf);
 	appendStringInfo(&buf, "DECLARE c%u CURSOR FOR\n%s",
@@ -1955,6 +2027,8 @@ create_cursor(ForeignScanState *node)
 
 	/* Clean up */
 	pfree(buf.data);
+#endif
+
 }
 
 /*
@@ -1964,7 +2038,11 @@ static void
 fetch_more_data(ForeignScanState *node)
 {
 	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
+#ifdef KITE_CONNECT
+	kite_result_t *volatile res = NULL;
+#else
 	PGresult   *volatile res = NULL;
+#endif
 	MemoryContext oldcontext;
 
 	/*
@@ -1975,6 +2053,47 @@ fetch_more_data(ForeignScanState *node)
 	MemoryContextReset(fsstate->batch_cxt);
 	oldcontext = MemoryContextSwitchTo(fsstate->batch_cxt);
 
+#ifdef KITE_CONNECT
+	PG_TRY();
+	{
+		sockstream_t *sockstream = fsstate->sockstream;
+		int numrows;
+		int i;
+		res = kite_get_result(sockstream);
+
+                /* Convert the data into HeapTuples */
+		numrows = kite_result_get_nrow(res);
+                fsstate->tuples = (HeapTuple *) palloc0(numrows * sizeof(HeapTuple));
+                fsstate->num_tuples = numrows;
+                fsstate->next_tuple = 0;
+
+                for (i = 0; i < numrows; i++)
+                {
+                        Assert(IsA(node->ss.ps.plan, ForeignScan));
+
+                        fsstate->tuples[i] =
+                                make_tuple_from_result_row(res, i,
+                                                                                   fsstate->rel,
+                                                                                   fsstate->attinmeta,
+                                                                                   fsstate->retrieved_attrs,
+                                                                                   node,
+                                                                                   fsstate->temp_cxt);
+                }
+
+                /* Update fetch_ct_2 */
+                if (fsstate->fetch_ct_2 < 2)
+                        fsstate->fetch_ct_2++;
+
+                /* Must be EOF if we didn't get as many tuples as we asked for. */
+                fsstate->eof_reached = (numrows == 0);
+        }
+        PG_FINALLY();
+        {
+                kite_result_destroy(res);
+        }
+        PG_END_TRY();
+
+#else 
 	/* PGresult must be released before leaving this function. */
 	PG_TRY();
 	{
@@ -2043,6 +2162,7 @@ fetch_more_data(ForeignScanState *node)
 		PQclear(res);
 	}
 	PG_END_TRY();
+#endif
 
 	MemoryContextSwitchTo(oldcontext);
 }
@@ -3577,6 +3697,23 @@ complete_pending_request(AsyncRequest *areq)
  * if we're processing a remote join, while fsstate is NULL in a non-query
  * context such as ANALYZE, or if we're processing a non-scan query node.
  */
+#ifdef KITE_CONNECT
+static HeapTuple
+make_tuple_from_result_row(kite_result_t *res,
+                                                   int row,
+                                                   Relation rel,
+                                                   AttInMetadata *attinmeta,
+                                                   List *retrieved_attrs,
+                                                   ForeignScanState *fsstate,
+                                                   MemoryContext temp_context)
+{
+
+
+	return 0;
+}
+
+
+#else
 static HeapTuple
 make_tuple_from_result_row(PGresult *res,
 						   int row,
@@ -3725,6 +3862,7 @@ make_tuple_from_result_row(PGresult *res,
 
 	return tuple;
 }
+#endif
 
 /*
  * Callback function which is called when error occurs during column value

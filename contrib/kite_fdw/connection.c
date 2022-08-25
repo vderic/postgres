@@ -117,6 +117,18 @@ static void pgfdw_finish_pre_subcommit_cleanup(List *pending_entries,
 static bool UserMappingPasswordRequired(UserMapping *user);
 static bool disconnect_cached_connections(Oid serverid);
 
+
+#ifdef KITE_CONNECT
+sockstream_t *
+GetConnection(UserMapping *user, bool will_prep_stmt, PgFdwConnState **state)
+{
+
+
+	return 0;
+}
+
+#else
+
 /*
  * Get a PGconn which can be used to execute queries on the remote PostgreSQL
  * server with the user's authorization.  A new connection is established
@@ -285,6 +297,7 @@ GetConnection(UserMapping *user, bool will_prep_stmt, PgFdwConnState **state)
 
 	return entry->conn;
 }
+#endif
 
 /*
  * Reset all transient state fields in the cached connection entry and
@@ -720,6 +733,20 @@ begin_remote_xact(ConnCacheEntry *entry)
 /*
  * Release connection reference count created by calling GetConnection.
  */
+
+#ifdef KITE_CONNECT
+void
+ReleaseConnection(sockstream_t *sockstream)
+{
+	/*
+	 * Currently, we don't actually track connection references because all
+	 * cleanup is managed on a transaction or subtransaction basis instead. So
+	 * there's nothing to do here.
+	 */
+	kite_destroy(sockstream);
+
+}
+#else
 void
 ReleaseConnection(PGconn *conn)
 {
@@ -728,8 +755,10 @@ ReleaseConnection(PGconn *conn)
 	 * cleanup is managed on a transaction or subtransaction basis instead. So
 	 * there's nothing to do here.
 	 */
+
 }
 
+#endif
 /*
  * Assign a "unique" number for a cursor.
  *

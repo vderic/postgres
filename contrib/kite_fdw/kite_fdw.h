@@ -19,6 +19,8 @@
 #include "nodes/execnodes.h"
 #include "nodes/pathnodes.h"
 #include "utils/relcache.h"
+#include "sockstream.h"
+#include "kite_client.h"
 
 /*
  * FDW-specific planner information kept in RelOptInfo.fdw_private for a
@@ -140,9 +142,15 @@ extern void reset_transmission_modes(int nestlevel);
 extern void process_pending_request(AsyncRequest *areq);
 
 /* in connection.c */
+#ifdef KITE_CONNECT
+extern sockstream_t *GetConnection(UserMapping *user, bool will_prep_stmt,
+							 PgFdwConnState **state);
+extern void ReleaseConnection(sockstream_t *sockstream);
+#else
 extern PGconn *GetConnection(UserMapping *user, bool will_prep_stmt,
 							 PgFdwConnState **state);
 extern void ReleaseConnection(PGconn *conn);
+#endif
 extern unsigned int GetCursorNumber(PGconn *conn);
 extern unsigned int GetPrepStmtNumber(PGconn *conn);
 extern void do_sql_command(PGconn *conn, const char *sql);
