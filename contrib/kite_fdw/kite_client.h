@@ -55,7 +55,7 @@ bool kite_result_fill(sockstream_t *ss, kite_result_t *res);
 
 void kite_result_decode(kite_result_t *res, AttInMetadata *attinmeta, List *retrieved_attrs);
 
-int kite_result_scan_next(kite_result_t *res, int ncol, Datum *datums, bool *isnulls);
+int kite_result_scan_next(kite_result_t *res, int row, Datum *datums, bool *isnulls);
 
 void kite_result_destroy(kite_result_t *res);
 
