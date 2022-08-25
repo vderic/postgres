@@ -444,6 +444,10 @@ bool kite_result_fill(sockstream_t *ss, kite_result_t *res) {
 			goto done;
 		}
 
+		if (sockbuf.msgsz == 0) {
+			break;
+		}
+
 		if (sockbuf.msgsz > 0) {
 			xrg_column_t *c = 0;
 			ret = xrg_column_fill(&c, &sockbuf);
@@ -467,7 +471,7 @@ bool kite_result_fill(sockstream_t *ss, kite_result_t *res) {
 			i++;
 		}
 
-	} while (sockbuf.msgsz == 0);
+	} while (true);
 
 
 	res->ncol = i;
