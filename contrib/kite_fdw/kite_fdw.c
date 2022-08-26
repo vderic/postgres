@@ -1058,15 +1058,15 @@ postgresIterateForeignScan(ForeignScanState *node)
 	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
 	TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
 
-	elog(LOG, "postgresIterateForeignScan");
 	/*
 	 * In sync mode, if this is the first call after Begin or ReScan, we need
 	 * to create the cursor on the remote side.  In async mode, we would have
 	 * already created the cursor before we get here, even if this is the
 	 * first call after Begin or ReScan.
 	 */
-	if (!fsstate->cursor_exists)
+	if (!fsstate->cursor_exists) {
 		create_cursor(node);
+	}
 
 	/*
 	 * Get some more tuples, if we've run out.
@@ -1950,10 +1950,12 @@ create_cursor(ForeignScanState *node)
 	PGresult   *res;
 #endif
 
+#if 0
 	/* First, process a pending asynchronous request, if any. */
 	if (fsstate->conn_state->pendingAreq)
 		process_pending_request(fsstate->conn_state->pendingAreq);
 
+#endif
 	/*
 	 * Construct array of query parameter values in text format.  We do the
 	 * conversions in the short-lived per-tuple context, so as not to cause a
@@ -1973,7 +1975,7 @@ create_cursor(ForeignScanState *node)
 		MemoryContextSwitchTo(oldcontext);
 	}
 
-#if KITE_CONNECT
+#ifdef KITE_CONNECT
 
 	if (kite_exec(sockstream, fsstate->query) != 0) {
 		elog(ERROR, "kite_get_result failed");

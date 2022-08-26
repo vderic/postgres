@@ -2648,8 +2648,12 @@ deparseRelation(StringInfo buf, Relation rel)
 	if (relname == NULL)
 		relname = RelationGetRelationName(rel);
 
+#ifdef KITE_CONNECT
+	appendStringInfo(buf, "%s", quote_identifier(relname));
+#else
 	appendStringInfo(buf, "%s.%s",
 					 quote_identifier(nspname), quote_identifier(relname));
+#endif
 }
 
 /*
