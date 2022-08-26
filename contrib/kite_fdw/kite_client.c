@@ -400,7 +400,7 @@ int kite_exec(sockstream_t *ss, char *json) {
         return 0;
 }
 
-kite_result_t *kite_get_result(sockstream_t *ss) {
+kite_result_t *kite_get_result(sockstream_t *ss, AttInMetadata *attinmeta, List *retrieved_attrs) {
 	kite_result_t *res = 0;
 
 	res = malloc(sizeof(kite_result_t));
@@ -410,6 +410,7 @@ kite_result_t *kite_get_result(sockstream_t *ss) {
 
 	kite_result_fill(ss, res);
 
+	kite_result_decode(res, attinmeta, retrieved_attrs);
 	return res;
 }
 
@@ -511,7 +512,7 @@ void kite_result_decode(kite_result_t *res, AttInMetadata *attinmeta, List *retr
                 elog(ERROR, "remote query result does not match the foreign table");
 }
 
-int kite_result_scan_next(kite_result_t *res, int row, Datum *datums, bool *isnulls) {
+int kite_result_scan_row(kite_result_t *res, int row, Datum *datums, bool *isnulls) {
 	int i = 0; 
 
 	if (row >= res->nrow) {

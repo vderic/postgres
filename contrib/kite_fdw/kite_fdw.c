@@ -2059,7 +2059,7 @@ fetch_more_data(ForeignScanState *node)
 		sockstream_t *sockstream = fsstate->sockstream;
 		int numrows;
 		int i;
-		res = kite_get_result(sockstream);
+		res = kite_get_result(sockstream, fsstate->attinmeta, fsstate->retrieved_attrs);
 
                 /* Convert the data into HeapTuples */
 		numrows = kite_result_get_nrow(res);
@@ -3754,7 +3754,7 @@ make_tuple_from_result_row(kite_result_t *res,
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
 
-	kite_result_decode(res, attinmeta, retrieved_attrs);
+	kite_result_scan_row(res, row, values, nulls);
 
 	/* Uninstall error context callback. */
 	error_context_stack = errcallback.previous;
