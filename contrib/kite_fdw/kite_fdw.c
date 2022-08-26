@@ -3761,7 +3761,7 @@ make_tuple_from_result_row(kite_result_t *res,
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
 
-	kite_result_scan_row(res, row, values, nulls);
+	kite_result_scan_row(res, attinmeta, retrieved_attrs, row, values, nulls);
 
 	/* Uninstall error context callback. */
 	error_context_stack = errcallback.previous;

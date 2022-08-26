@@ -497,7 +497,6 @@ int kite_result_get_nrow(kite_result_t *res) {
 void kite_result_decode(kite_result_t *res, AttInMetadata *attinmeta, List *retrieved_attrs) {
 	int j = 0;
 	ListCell *lc;
-
 	foreach (lc, retrieved_attrs) {
 		int i = lfirst_int(lc);
 		xrg_column_t *c = res->cols[j];
@@ -514,17 +513,21 @@ void kite_result_decode(kite_result_t *res, AttInMetadata *attinmeta, List *retr
                 elog(ERROR, "remote query result does not match the foreign table");
 }
 
-int kite_result_scan_row(kite_result_t *res, int row, Datum *datums, bool *isnulls) {
-	int i = 0; 
+int kite_result_scan_row(kite_result_t *res, AttInMetadata *attinmeta, List *retrieved_attrs, int row, Datum *datums, bool *isnulls) {
+	int j = 0;
+	ListCell *lc;
 
 	if (row >= res->nrow) {
 		return -1;
 	}
 
-	for (i = 0 ; i < res->ncol ; i++) {
-		xrg_column_t *c = res->cols[i];
-		datums[i] = xrg_column_get_value(c, row);
-		isnulls[i] = xrg_column_get_isnull(c, row);
+	foreach (lc, retrieved_attrs) {
+		int i = lfirst_int(lc);
+		xrg_column_t *c = res->cols[j];
+		datums[i-1] = xrg_column_get_value(c, row);
+		isnulls[i-1] = xrg_column_get_isnull(c, row);
+
+		j++;
 	}
 
 	return 0;
