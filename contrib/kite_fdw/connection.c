@@ -119,12 +119,75 @@ static bool disconnect_cached_connections(Oid serverid);
 
 
 #ifdef KITE_CONNECT
+static sockstream_t *connect_kite_server(ForeignServer *server, UserMapping *user) 
+{
+	sockstream_t *volatile ss = NULL;
+
+	PG_TRY();
+	{
+		const char **keywords;
+		const char **values;
+		int			n;
+		char *host = NULL;
+
+		/*
+		 * Construct connection params from generic options of ForeignServer
+		 * and UserMapping.  (Some of them might not be libpq options, in
+		 * which case we'll just waste a few array slots.)  Add 4 extra slots
+		 * for application_name, fallback_application_name, client_encoding,
+		 * end marker.
+		 */
+		n = list_length(server->options) + list_length(user->options) + 4;
+		keywords = (const char **) palloc(n * sizeof(char *));
+		values = (const char **) palloc(n * sizeof(char *));
+
+		n = 0;
+		n += ExtractConnectionOptions(server->options,
+									  keywords + n, values + n);
+		n += ExtractConnectionOptions(user->options,
+									  keywords + n, values + n);
+
+		/* search for host */
+		for (int i = n - 1; i >= 0 ; i--) 
+		{
+			if (strcmp(keywords[i], "host") == 0 && 
+					*(values[i]) != '\0')
+			{
+				host = pstrdup(values[i]);
+				break;
+			}
+		}
+
+
+		ss = kite_connect(host);
+
+		pfree(keywords);
+		pfree(values);
+		if (host) pfree(host);
+	}
+	PG_CATCH();
+	{
+		if (ss) {
+			kite_destroy(ss);
+		}
+		PG_RE_THROW();
+
+	}
+	PG_END_TRY();
+
+	return ss;
+}
+
+static void disconnect_kited_server(sockstream_t *ss) 
+{
+	kite_destroy(ss);
+}
+
 sockstream_t *
 GetConnection(UserMapping *user, bool will_prep_stmt, PgFdwConnState **state)
 {
-
-
-	return 0;
+        ForeignServer *server = GetForeignServer(user->serverid);
+	return connect_kite_server(server, user);
 }
 
 #else

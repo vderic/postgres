@@ -39,7 +39,7 @@ typedef struct kite_result_t {
 } kite_result_t;
 
 
-int kite_connect(sockstream_t **ss, char *host);
+sockstream_t *kite_connect(char *host);
 
 void kite_destroy(sockstream_t *ss);
 
