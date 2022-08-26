@@ -1077,7 +1077,12 @@ postgresIterateForeignScan(ForeignScanState *node)
 		if (fsstate->async_capable)
 			return ExecClearTuple(slot);
 		/* No point in another fetch if we already detected EOF, though. */
+#ifdef KITE_CONNECT
 		fetch_more_data(node);
+#else
+		if (!fsstate->eof_reached)
+			fetch_more_data(node);
+#endif
 		/* If we didn't get any tuples, must be end of data. */
 		if (fsstate->next_tuple >= fsstate->num_tuples)
 			return ExecClearTuple(slot);
