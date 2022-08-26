@@ -410,7 +410,9 @@ kite_result_t *kite_get_result(sockstream_t *ss, AttInMetadata *attinmeta, List 
 
 	kite_result_fill(ss, res);
 
-	kite_result_decode(res, attinmeta, retrieved_attrs);
+	if (res->ncol > 0) {
+		kite_result_decode(res, attinmeta, retrieved_attrs);
+	}
 	return res;
 }
 
