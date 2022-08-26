@@ -528,7 +528,7 @@ _PG_init(void)
 	 * than NAMEDATALEN and replaces any non-ASCII characters in it with a '?'
 	 * character.
 	 */
-	DefineCustomStringVariable("postgres_fdw.application_name",
+	DefineCustomStringVariable("kite_fdw.application_name",
 							   "Sets the application name to be used on the remote server.",
 							   NULL,
 							   &pgfdw_application_name,
@@ -539,5 +539,5 @@ _PG_init(void)
 							   NULL,
 							   NULL);
 
-	MarkGUCPrefixReserved("postgres_fdw");
+	MarkGUCPrefixReserved("kite_fdw");
 }

@@ -343,7 +343,7 @@ sockstream_t *kite_connect(char *host) {
 
         char *port = strchr(host, ':');
         if (port == NULL) {
-                elog(LOG, "kite: host should be in hostname:port format");
+                elog(ERROR, "kite: host should be in hostname:port format. %s", host);
                 return 0;
         }
 
