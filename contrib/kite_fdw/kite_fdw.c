@@ -3707,9 +3707,90 @@ make_tuple_from_result_row(kite_result_t *res,
                                                    ForeignScanState *fsstate,
                                                    MemoryContext temp_context)
 {
+	HeapTuple	tuple;
+	TupleDesc	tupdesc;
+	Datum	   *values;
+	bool	   *nulls;
+	ItemPointer ctid = NULL;
+	ConversionLocation errpos;
+	ErrorContextCallback errcallback;
+	MemoryContext oldcontext;
+	ListCell   *lc;
 
+	Assert(row < kite_result_get_nrow(res));
 
-	return 0;
+	/*
+	 * Do the following work in a temp context that we reset after each tuple.
+	 * This cleans up not only the data we have direct access to, but any
+	 * cruft the I/O functions might leak.
+	 */
+	oldcontext = MemoryContextSwitchTo(temp_context);
+
+	/*
+	 * Get the tuple descriptor for the row.  Use the rel's tupdesc if rel is
+	 * provided, otherwise look to the scan node's ScanTupleSlot.
+	 */
+	if (rel)
+		tupdesc = RelationGetDescr(rel);
+	else
+	{
+		Assert(fsstate);
+		tupdesc = fsstate->ss.ss_ScanTupleSlot->tts_tupleDescriptor;
+	}
+
+	values = (Datum *) palloc0(tupdesc->natts * sizeof(Datum));
+	nulls = (bool *) palloc(tupdesc->natts * sizeof(bool));
+	/* Initialize to nulls for any columns not present in result */
+	memset(nulls, true, tupdesc->natts * sizeof(bool));
+
+	/*
+	 * Set up and install callback to report where conversion error occurs.
+	 */
+	errpos.cur_attno = 0;
+	errpos.rel = rel;
+	errpos.fsstate = fsstate;
+	errcallback.callback = conversion_error_callback;
+	errcallback.arg = (void *) &errpos;
+	errcallback.previous = error_context_stack;
+	error_context_stack = &errcallback;
+
+	kite_result_decode(res, attinmeta, retrieved_attrs);
+
+	/* Uninstall error context callback. */
+	error_context_stack = errcallback.previous;
+
+	/*
+	 * Build the result tuple in caller's memory context.
+	 */
+	MemoryContextSwitchTo(oldcontext);
+
+	tuple = heap_form_tuple(tupdesc, values, nulls);
+
+	/*
+	 * If we have a CTID to return, install it in both t_self and t_ctid.
+	 * t_self is the normal place, but if the tuple is converted to a
+	 * composite Datum, t_self will be lost; setting t_ctid allows CTID to be
+	 * preserved during EvalPlanQual re-evaluations (see ROW_MARK_COPY code).
+	 */
+	if (ctid)
+		tuple->t_self = tuple->t_data->t_ctid = *ctid;
+
+	/*
+	 * Stomp on the xmin, xmax, and cmin fields from the tuple created by
+	 * heap_form_tuple.  heap_form_tuple actually creates the tuple with
+	 * DatumTupleFields, not HeapTupleFields, but the executor expects
+	 * HeapTupleFields and will happily extract system columns on that
+	 * assumption.  If we don't do this then, for example, the tuple length
+	 * ends up in the xmin field, which isn't what we want.
+	 */
+	HeapTupleHeaderSetXmax(tuple->t_data, InvalidTransactionId);
+	HeapTupleHeaderSetXmin(tuple->t_data, InvalidTransactionId);
+	HeapTupleHeaderSetCmin(tuple->t_data, InvalidTransactionId);
+
+	/* Clean up */
+	MemoryContextReset(temp_context);
+
+	return tuple;
 }
 
 

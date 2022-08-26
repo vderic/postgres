@@ -483,7 +483,7 @@ done:
 
 }
 
-int kite_result_get_nfield(kite_result_t *res) {
+int kite_result_get_nfields(kite_result_t *res) {
 	return res->ncol;
 }
 
@@ -502,6 +502,13 @@ void kite_result_decode(kite_result_t *res, AttInMetadata *attinmeta, List *retr
 
 		j++;
 	}
+
+        /*
+         * Check we got the expected number of columns.  Note: j == 0 and
+         * PQnfields == 1 is expected, since deparse emits a NULL if no columns.
+         */
+        if (j > 0 && j != kite_result_get_nfields(res))
+                elog(ERROR, "remote query result does not match the foreign table");
 }
 
 int kite_result_scan_next(kite_result_t *res, int row, Datum *datums, bool *isnulls) {

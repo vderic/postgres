@@ -55,7 +55,7 @@ int kite_result_scan_next(kite_result_t *res, int row, Datum *datums, bool *isnu
 
 void kite_result_destroy(kite_result_t *res);
 
-int kite_result_get_nfield(kite_result_t *res);
+int kite_result_get_nfields(kite_result_t *res);
 
 int kite_result_get_nrow(kite_result_t *res);
 
