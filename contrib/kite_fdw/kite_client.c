@@ -273,7 +273,7 @@ void xrg_column_decode(xrg_column_t *c, FmgrInfo *flinfo, Oid ioparams, int32_t 
 			if (flag[i] & XRG_FLAG_NULL) {
 				datumv[i] = 0;
 			} else {
-				char s[MAX_DEC128_PRECISION+2];
+				char s[MAX_DEC128_STRLEN];
 				int64_t v = p[i];
 				dec64_to_string(v, scale, s);
 				/*
@@ -300,7 +300,7 @@ void xrg_column_decode(xrg_column_t *c, FmgrInfo *flinfo, Oid ioparams, int32_t 
 			if (flag[i] & XRG_FLAG_NULL) {
 				datumv[i] = 0;
 			} else {
-				char s[MAX_DEC128_PRECISION+2];
+				char s[MAX_DEC128_STRLEN];
 				__int128_t v = p[i];
 				dec128_to_string(v, scale, s);
 				/*

@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 #define MAX_DEC128_PRECISION 38
+#define MAX_DEC128_STRLEN (38+4)
 
 /* decimal */
 void dec128_to_string(__int128_t i128, int scale, char *ret);
