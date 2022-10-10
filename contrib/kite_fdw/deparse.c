@@ -207,6 +207,10 @@ static void get_relation_column_alias_ids(Var *node, RelOptInfo *foreignrel,
 static int deparseKiteGroupIndex(int resno, List *tlist);
 static void appendKiteGroupByIndex(List *tlist, List **retrieved_groupby_attrs, deparse_expr_cxt *context);
 
+static inline bool aggfnoid_is_avg(int aggfnoid) {
+	return (aggfnoid >= 2100 && aggfnoid <= 2105);
+}
+
 /*
  * Examine each qual clause in input_conds, and classify them into two groups,
  * which are returned as two lists:
@@ -2762,7 +2766,21 @@ deparseExpr(Expr *node, deparse_expr_cxt *context)
 			deparseArrayExpr((ArrayExpr *) node, context);
 			break;
 		case T_Aggref:
-			deparseAggref((Aggref *) node, context);
+			{
+
+				Aggref *agg = (Aggref *) node;
+				if (aggfnoid_is_avg(agg->aggfnoid)) { 
+					Oid fn = agg->aggfnoid;
+					agg->aggfnoid = 2147; // COUNT
+					deparseAggref(agg, context);
+					appendStringInfoString(context->buf, ", ");
+					agg->aggfnoid = 2107; // SUM
+					deparseAggref(agg, context);
+					agg->aggfnoid = fn;
+				} else {
+					deparseAggref((Aggref *) node, context);
+				}
+			}
 			break;
 		default:
 			elog(ERROR, "unsupported expression type for deparse: %d",
@@ -4030,7 +4048,7 @@ static int deparseKiteGroupIndex(int resno, List *tlist) {
 			Aggref *agg = (Aggref *) tle->expr;
 			Oid aggfnoid = agg->aggfnoid;
 			/* TODO: check AVG and advance 2 */
-			if (aggfnoid >= 2100 && aggfnoid <= 2105) {
+			if (aggfnoid_is_avg(aggfnoid)) {
 				skip = 2;
 			}
 		}

@@ -895,8 +895,11 @@ postgresGetForeignPlan(PlannerInfo *root,
 
 		fdw_private = lappend(fdw_private,
 							  retrieved_aggfnoids);
-		fdw_private = lappend(fdw_private,
+
+		if (retrieved_groupby_attrs) {
+			fdw_private = lappend(fdw_private,
 							  retrieved_groupby_attrs);
+		}
 	}
 
 	/*
