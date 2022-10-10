@@ -664,9 +664,9 @@ postgresGetForeignPlan(PlannerInfo *root,
 	List	   *params_list = NIL;
 	List	   *fdw_scan_tlist = NIL;
 	List	   *fdw_recheck_quals = NIL;
-	List	   *retrieved_attrs;
-	List       *retrieved_aggfnoids;
-	List	   *retrieved_groupby_attrs;
+	List	   *retrieved_attrs = NIL;
+	List       *retrieved_aggfnoids = NIL;
+	List	   *retrieved_groupby_attrs = NIL;
 	StringInfoData sql;
 	bool		has_final_sort = false;
 	bool		has_limit = false;
