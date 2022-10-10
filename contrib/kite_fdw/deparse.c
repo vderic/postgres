@@ -2771,10 +2771,10 @@ deparseExpr(Expr *node, deparse_expr_cxt *context)
 				Aggref *agg = (Aggref *) node;
 				if (aggfnoid_is_avg(agg->aggfnoid)) { 
 					Oid fn = agg->aggfnoid;
-					agg->aggfnoid = 2147; // COUNT
+					agg->aggfnoid = 2107; // SUM
 					deparseAggref(agg, context);
 					appendStringInfoString(context->buf, ", ");
-					agg->aggfnoid = 2107; // SUM
+					agg->aggfnoid = 2147; // COUNT
 					deparseAggref(agg, context);
 					agg->aggfnoid = fn;
 				} else {
