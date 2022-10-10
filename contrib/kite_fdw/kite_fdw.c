@@ -88,7 +88,14 @@ enum FdwScanPrivateIndex
 	 * String describing join i.e. names of relations being joined and types
 	 * of join, added when the scan is join
 	 */
-	FdwScanPrivateRelations
+	FdwScanPrivateRelations,
+
+	/* Integer list of aggfnoid retrieved by the SELECT */
+	FdwScanPrivateRetrievedAggfnoids,
+
+	/* Integer list of groupby index in Kite by the SELECT */
+	FdwScanPrivateRetrievedGroupByAttrs
+
 };
 
 /*
@@ -656,6 +663,8 @@ postgresGetForeignPlan(PlannerInfo *root,
 	List	   *fdw_scan_tlist = NIL;
 	List	   *fdw_recheck_quals = NIL;
 	List	   *retrieved_attrs;
+	List       *retrieved_aggfnoids;
+	List	   *retrieved_groupby_attrs;
 	StringInfoData sql;
 	bool		has_final_sort = false;
 	bool		has_limit = false;
@@ -825,7 +834,25 @@ postgresGetForeignPlan(PlannerInfo *root,
 	deparseSelectStmtForRel(&sql, root, foreignrel, fdw_scan_tlist,
 							remote_exprs, best_path->path.pathkeys,
 							has_final_sort, has_limit, false,
-							&retrieved_attrs, &params_list);
+							&retrieved_attrs, &params_list, &retrieved_aggfnoids,
+							&retrieved_groupby_attrs);
+
+	{
+		ListCell *lc;
+
+		foreach (lc, retrieved_aggfnoids) {
+			Oid fn = lfirst_oid(lc);
+			elog(LOG, "OID = %d", fn);
+
+		}
+
+
+		foreach(lc, retrieved_groupby_attrs) {
+			int idx = lfirst_int(lc);
+			elog(LOG, "GRPBY = %d", idx);
+		}
+	}
+
 
 	/* Remember remote_exprs for possible use by postgresPlanDirectModify */
 	fpinfo->final_remote_exprs = remote_exprs;
@@ -862,9 +889,15 @@ postgresGetForeignPlan(PlannerInfo *root,
 							 retrieved_attrs,
 							 makeInteger(fpinfo->fetch_size));
 #endif
-	if (IS_JOIN_REL(foreignrel) || IS_UPPER_REL(foreignrel))
+	if (IS_JOIN_REL(foreignrel) || IS_UPPER_REL(foreignrel)) {
 		fdw_private = lappend(fdw_private,
 							  makeString(fpinfo->relation_name));
+
+		fdw_private = lappend(fdw_private,
+							  retrieved_aggfnoids);
+		fdw_private = lappend(fdw_private,
+							  retrieved_groupby_attrs);
+	}
 
 	/*
 	 * Create the ForeignScan node for the given relation.
@@ -1371,6 +1404,8 @@ estimate_path_cost_size(PlannerInfo *root,
 
 		/* Required only to be passed to deparseSelectStmtForRel */
 		List	   *retrieved_attrs;
+		List       *retrieved_aggfnoids;
+		List       *retrieved_groupby_attrs;
 
 		/*
 		 * param_join_conds might contain both clauses that are safe to send
@@ -1404,7 +1439,8 @@ estimate_path_cost_size(PlannerInfo *root,
 								remote_conds, pathkeys,
 								fpextra ? fpextra->has_final_sort : false,
 								fpextra ? fpextra->has_limit : false,
-								false, &retrieved_attrs, NULL);
+								false, &retrieved_attrs, NULL, &retrieved_aggfnoids,
+								&retrieved_groupby_attrs);
 
 		/* Get the remote estimate */
 #ifdef KITE_CONNECT

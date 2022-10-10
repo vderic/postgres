@@ -138,6 +138,7 @@ static void deparseTargetList(StringInfo buf,
 static void deparseExplicitTargetList(List *tlist,
 									  bool is_returning,
 									  List **retrieved_attrs,
+									  List **retrieved_aggfnoids,
 									  deparse_expr_cxt *context);
 static void deparseSubqueryTargetList(deparse_expr_cxt *context);
 static void deparseReturningList(StringInfo buf, RangeTblEntry *rte,
@@ -170,7 +171,7 @@ static void printRemoteParam(int paramindex, Oid paramtype, int32 paramtypmod,
 							 deparse_expr_cxt *context);
 static void printRemotePlaceholder(Oid paramtype, int32 paramtypmod,
 								   deparse_expr_cxt *context);
-static void deparseSelectSql(List *tlist, bool is_subquery, List **retrieved_attrs,
+static void deparseSelectSql(List *tlist, bool is_subquery, List **retrieved_attrs, List **retrieved_aggfnoids,
 							 deparse_expr_cxt *context);
 static void deparseLockingClause(deparse_expr_cxt *context);
 static void appendOrderByClause(List *pathkeys, bool has_final_sort,
@@ -203,6 +204,8 @@ static bool is_subquery_var(Var *node, RelOptInfo *foreignrel,
 static void get_relation_column_alias_ids(Var *node, RelOptInfo *foreignrel,
 										  int *relno, int *colno);
 
+static int deparseKiteGroupIndex(int resno, List *tlist);
+static void appendKiteGroupByIndex(List *tlist, List **retrieved_groupby_attrs, deparse_expr_cxt *context);
 
 /*
  * Examine each qual clause in input_conds, and classify them into two groups,
@@ -1231,7 +1234,8 @@ void
 deparseSelectStmtForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *rel,
 						List *tlist, List *remote_conds, List *pathkeys,
 						bool has_final_sort, bool has_limit, bool is_subquery,
-						List **retrieved_attrs, List **params_list)
+						List **retrieved_attrs, List **params_list, List **retrieved_aggfnoids,
+						List **retrieved_groupby_attrs)
 {
 	deparse_expr_cxt context;
 	PgFdwRelationInfo *fpinfo = (PgFdwRelationInfo *) rel->fdw_private;
@@ -1251,7 +1255,7 @@ deparseSelectStmtForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *rel,
 	context.params_list = params_list;
 
 	/* Construct SELECT clause */
-	deparseSelectSql(tlist, is_subquery, retrieved_attrs, &context);
+	deparseSelectSql(tlist, is_subquery, retrieved_attrs, retrieved_aggfnoids, &context);
 
 	/*
 	 * For upper relations, the WHERE clause is built from the remote
@@ -1273,6 +1277,9 @@ deparseSelectStmtForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *rel,
 
 	if (IS_UPPER_REL(rel))
 	{
+		/* Append GROYP BY INDEX */
+		appendKiteGroupByIndex(tlist, retrieved_groupby_attrs, &context);
+
 		/* Append GROUP BY clause */
 		appendGroupByClause(tlist, &context);
 
@@ -1311,7 +1318,7 @@ deparseSelectStmtForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *rel,
  * Read prologue of deparseSelectStmtForRel() for details.
  */
 static void
-deparseSelectSql(List *tlist, bool is_subquery, List **retrieved_attrs,
+deparseSelectSql(List *tlist, bool is_subquery, List **retrieved_attrs, List **retrieved_aggfnoids,
 				 deparse_expr_cxt *context)
 {
 	StringInfo	buf = context->buf;
@@ -1355,7 +1362,7 @@ deparseSelectSql(List *tlist, bool is_subquery, List **retrieved_attrs,
 		 * For a join or upper relation the input tlist gives the list of
 		 * columns required to be fetched from the foreign server.
 		 */
-		deparseExplicitTargetList(tlist, false, retrieved_attrs, context);
+		deparseExplicitTargetList(tlist, false, retrieved_attrs, retrieved_aggfnoids, context);
 	}
 	else
 	{
@@ -1661,6 +1668,7 @@ static void
 deparseExplicitTargetList(List *tlist,
 						  bool is_returning,
 						  List **retrieved_attrs,
+						  List **retrieved_aggfnoids,
 						  deparse_expr_cxt *context)
 {
 	ListCell   *lc;
@@ -1668,6 +1676,7 @@ deparseExplicitTargetList(List *tlist,
 	int			i = 0;
 
 	*retrieved_attrs = NIL;
+	*retrieved_aggfnoids = NIL;
 
 	foreach(lc, tlist)
 	{
@@ -1679,6 +1688,14 @@ deparseExplicitTargetList(List *tlist,
 			appendStringInfoString(buf, " RETURNING ");
 
 		deparseExpr((Expr *) tle->expr, context);
+
+		/* TODO: append aggfnoid to retrieved_aggfnoids if node is AggRef */
+		if (IsA(tle->expr, Aggref)) {
+			Aggref *aggref = (Aggref *) tle->expr;
+			*retrieved_aggfnoids = lappend_oid(*retrieved_aggfnoids, aggref->aggfnoid);
+		} else {
+			*retrieved_aggfnoids = lappend_oid(*retrieved_aggfnoids, 0);
+		}
 
 		*retrieved_attrs = lappend_int(*retrieved_attrs, i + 1);
 		i++;
@@ -1901,6 +1918,8 @@ deparseRangeTblRef(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 	if (make_subquery)
 	{
 		List	   *retrieved_attrs;
+		List       *retrieved_aggfnoids;
+		List       *retrieved_groupby_attrs;
 		int			ncols;
 
 		/*
@@ -1916,7 +1935,8 @@ deparseRangeTblRef(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 		deparseSelectStmtForRel(buf, root, foreignrel, NIL,
 								fpinfo->remote_conds, NIL,
 								false, false, true,
-								&retrieved_attrs, params_list);
+								&retrieved_attrs, params_list, &retrieved_aggfnoids,
+								&retrieved_groupby_attrs);
 		appendStringInfoChar(buf, ')');
 
 		/* Append the relation alias. */
@@ -2223,7 +2243,7 @@ deparseDirectUpdateSql(StringInfo buf, PlannerInfo *root,
 	}
 
 	if (foreignrel->reloptkind == RELOPT_JOINREL)
-		deparseExplicitTargetList(returningList, true, retrieved_attrs,
+		deparseExplicitTargetList(returningList, true, retrieved_attrs, 0,
 								  &context);
 	else
 		deparseReturningList(buf, rte, rtindex, rel, false,
@@ -2306,7 +2326,7 @@ deparseDirectDeleteSql(StringInfo buf, PlannerInfo *root,
 	}
 
 	if (foreignrel->reloptkind == RELOPT_JOINREL)
-		deparseExplicitTargetList(returningList, true, retrieved_attrs,
+		deparseExplicitTargetList(returningList, true, retrieved_attrs, 0,
 								  &context);
 	else
 		deparseReturningList(buf, planner_rt_fetch(rtindex, root),
@@ -3860,15 +3880,19 @@ deparseSortGroupClause(Index ref, List *tlist, bool force_colno,
 	StringInfo	buf = context->buf;
 	TargetEntry *tle;
 	Expr	   *expr;
+	int        gbyidx = 0;
 
 	tle = get_sortgroupref_tle(ref, tlist);
 	expr = tle->expr;
+	gbyidx = deparseKiteGroupIndex(tle->resno, tlist);
+	
 
 	if (force_colno)
 	{
 		/* Use column-number form when requested by caller. */
 		Assert(!tle->resjunk);
-		appendStringInfo(buf, "%d", tle->resno);
+		/* TODO: use retrieved_aggfnoids to get the kite resno from tle->resno */
+		appendStringInfo(buf, "%d", gbyidx);
 	}
 	else if (expr && IsA(expr, Const))
 	{
@@ -3986,3 +4010,69 @@ get_relation_column_alias_ids(Var *node, RelOptInfo *foreignrel,
 	/* Shouldn't get here */
 	elog(ERROR, "unexpected expression in subquery output");
 }
+
+static int deparseKiteGroupIndex(int resno, List *tlist) {
+
+	ListCell *lc;
+	int i = 1;
+	int ret = 1;
+
+	foreach (lc, tlist) {
+		TargetEntry *tle = lfirst_node(TargetEntry, lc);
+		int skip = 1;
+		elog(LOG, "resno = %d %d %d", i, resno, tle->resno);
+
+		if (i == resno) {
+			return ret;
+		}
+
+		if (IsA(tle->expr, Aggref)) {
+			Aggref *agg = (Aggref *) tle->expr;
+			Oid aggfnoid = agg->aggfnoid;
+			/* TODO: check AVG and advance 2 */
+			if (aggfnoid >= 2100 && aggfnoid <= 2105) {
+				skip = 2;
+			}
+		}
+
+		ret += skip;
+		i++;
+	}
+
+	return ret;
+}
+
+
+/*
+ * Deparse GROUP BY clause.
+ */
+static void
+appendKiteGroupByIndex(List *tlist, List **retrieved_groupby_attrs, deparse_expr_cxt *context)
+{
+        Query      *query = context->root->parse;
+        ListCell   *lc;
+	*retrieved_groupby_attrs = NIL;
+
+        /* Nothing to be done, if there's no GROUP BY clause in the query. */
+        if (!query->groupClause)
+                return;
+
+        /*
+         * Queries with grouping sets are not pushed down, so we don't expect
+         * grouping sets here.
+         */
+        Assert(!query->groupingSets);
+
+
+        foreach(lc, query->groupClause)
+        {
+        	TargetEntry *tle;
+                SortGroupClause *grp = (SortGroupClause *) lfirst(lc);
+        	int        gbyidx = 0;
+        	tle = get_sortgroupref_tle(grp->tleSortGroupRef, tlist);
+        	gbyidx = deparseKiteGroupIndex(tle->resno, tlist);
+
+		*retrieved_groupby_attrs = lappend_int(*retrieved_groupby_attrs, gbyidx);
+        }
+}
+
