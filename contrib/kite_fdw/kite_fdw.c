@@ -111,6 +111,8 @@ typedef struct PgFdwScanState
 	/* extracted fdw_private data */
 	char	   *query;			/* text of SELECT command */
 	List	   *retrieved_attrs;	/* list of retrieved attribute numbers */
+	List       *retrieved_groupby_attrs; /* list of retrieved group by index in kite */
+	List       *retrieved_aggfnoids;  /* list of retrieved aggfnoids from target list */
 
 
 	/* for remote query execution */
@@ -837,23 +839,6 @@ postgresGetForeignPlan(PlannerInfo *root,
 							&retrieved_attrs, &params_list, &retrieved_aggfnoids,
 							&retrieved_groupby_attrs);
 
-	{
-		ListCell *lc;
-
-		foreach (lc, retrieved_aggfnoids) {
-			Oid fn = lfirst_oid(lc);
-			elog(LOG, "OID = %d", fn);
-
-		}
-
-
-		foreach(lc, retrieved_groupby_attrs) {
-			int idx = lfirst_int(lc);
-			elog(LOG, "GRPBY = %d", idx);
-		}
-	}
-
-
 	/* Remember remote_exprs for possible use by postgresPlanDirectModify */
 	fpinfo->final_remote_exprs = remote_exprs;
 
@@ -1048,6 +1033,37 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	fsstate->temp_cxt = AllocSetContextCreate(estate->es_query_cxt,
 											  "postgres_fdw temporary data",
 											  ALLOCSET_SMALL_SIZES);
+
+	if (list_length(fsplan->fdw_private) >= FdwScanPrivateRetrievedAggfnoids+1) {
+		fsstate->retrieved_aggfnoids = (List *) list_nth(fsplan->fdw_private,
+				FdwScanPrivateRetrievedAggfnoids);
+	}
+
+	if (list_length(fsplan->fdw_private) >= FdwScanPrivateRetrievedGroupByAttrs+1) {
+		fsstate->retrieved_groupby_attrs = (List *) list_nth(fsplan->fdw_private,
+				FdwScanPrivateRetrievedGroupByAttrs);
+	}
+
+        {
+                ListCell *lc;
+
+		if (fsstate->retrieved_aggfnoids) {
+                foreach (lc, fsstate->retrieved_aggfnoids) {
+                        Oid fn = lfirst_oid(lc);
+                        elog(LOG, "OID = %d", fn);
+
+                }
+		}
+
+
+		if (fsstate->retrieved_groupby_attrs) {
+                foreach(lc, fsstate->retrieved_groupby_attrs) {
+                        int idx = lfirst_int(lc);
+                        elog(LOG, "GRPBY = %d", idx);
+                }
+		}
+        }
+
 
 	/*
 	 * Get info we'll need for converting data fetched from the foreign server
