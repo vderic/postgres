@@ -8,6 +8,15 @@
 #include "hop/spill.h"
 #include "kite_client.h"
 
+typedef struct kite_target_t kite_target_t;
+struct kite_target_t {
+	Oid aggfn;
+	int pgattr;
+	List *attrs;
+	void *data;
+};
+
+
 typedef struct xrg_agg_t xrg_agg_t;
 struct xrg_agg_t {
 	int ncol;

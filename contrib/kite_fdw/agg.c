@@ -129,6 +129,7 @@ static void *init(void *context, const void *rec) {
 static void *trans(void *context, const void *rec, void *data) {
 	List *translist = (List *)data;
 
+
 	return 0;
 }
 
@@ -181,6 +182,38 @@ static int serialize(xrg_iter_t *iter, char **buf, int *buflen) {
 	return sz;
 }
 
+static void build_tlist(xrg_agg_t *agg) {
+
+	int i = 0, j=0;
+	ListCell *lc;
+	kite_target_t *tlist = 0;
+	int attrlen = list_length(agg->retrieved_attrs);
+	int aggfnlen = list_length(agg->aggfnoids);
+
+	if (attrlen != aggfnlen) {
+		elog(ERROR, "build_tlist: attrlen != aggfnlen");
+		return;
+	}
+
+	tlist = (kite_target_t*) palloc(sizeof(kite_target_t) * attrlen);
+	memset(tlist, 0, sizeof(kite_target_t) * attrlen);
+
+	foreach (lc, agg->retrieved_attrs) {
+		tlist[i].pgattr = lfirst_int(lc);
+	}
+
+	i = j = 0;
+	foreach (lc, agg->aggfnoids) {
+		tlist[i].aggfn = lfirst_oid(lc);
+		tlist[i].attrs = lappend_int(tlist[i].attrs, j++);
+		if (aggfnoid_is_avg(tlist[i].aggfn)) {
+			tlist[i].attrs = lappend_int(tlist[i].attrs, j++);
+		}
+	}
+
+}
+
+
 xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_attrs) {
 
 	xrg_agg_t *agg = (xrg_agg_t*) palloc(sizeof(xrg_agg_t));
@@ -192,6 +225,8 @@ xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_at
 	agg->aggfnoids = aggfnoids;
 	agg->groupby_attrs = groupby_attrs;
 	agg->batchid = 0;
+	build_tlist(agg);
+
 	memset(&agg->agg_iter, 0, sizeof(hagg_iter_t));
 
 	Assert(aggfnoids);
