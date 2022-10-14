@@ -1,14 +1,16 @@
 TOPDIR = ..
 JSONTAR = json-c.tar.gz
 JSONDIR = $(JSONTAR:.tar.gz=)
-XRGTAR = xrg-r220809.zip
+XRGTAR = xrg-r220920.zip
 XRGDIR = $(XRGTAR:.zip=)
 ARROWZIP = apache-arrow-7.0.0-static.zip
 ARROWDIR = $(ARROWZIP:.zip=)
 SOCKSTREAMTAR = sockstream-r220819.zip
 SOCKSTREAMDIR = $(SOCKSTREAMTAR:.zip=)
+HOPZIP = hop-r221014.zip
+HOPDIR = $(HOPZIP:.zip=)
 
-all: $(SUBDIR) include/xrg.h include/arrow/api.h include/sockstream.h include/rapidjson
+all: $(SUBDIR) include/xrg.h include/arrow/api.h include/sockstream.h include/rapidjson include/hop/hashagg.h
 
 $(SUBDIR):
 	mkdir $@
@@ -17,6 +19,11 @@ include/json-c/json.h : tarball/$(JSONTAR)
 	rm -rf $(JSONDIR)
 	tar zxvf tarball/$(JSONTAR)
 	(cd json-c && mkdir -p build && cd build && ../cmake-configure --disable-shared --prefix=../../ && make && make install)
+
+include/hop/hashagg.h: tarball/$(HOPZIP)
+	rm -rf $(HOPDIR)
+	unzip -q tarball/$(HOPZIP)
+	make -C $(HOPDIR) install prefix=$(shell pwd)
 
 include/xrg.h: tarball/$(XRGTAR)
 	rm -rf $(XRGDIR)
