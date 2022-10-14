@@ -22,6 +22,22 @@ static char *get_tuple(const void *rec, xrg_attr_t *attrs, int cno) {
 	return p;
 }
 
+static int get_ncol_from_aggfnoids(List *aggfnoids) {
+	ListCell *lc;
+	int i = 0;
+
+	foreach (lc, aggfnoids) {
+		int fn = lfirst_oid(lc);
+		if (aggfnoid_is_avg(fn)) {
+			i += 2;
+		} else {
+			i++;
+		}
+	}
+	return i;
+}
+
+
 static int keyeq(void *context, const void *rec1, const void *rec2) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	ListCell *lc;
@@ -179,7 +195,7 @@ xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_at
 	memset(&agg->agg_iter, 0, sizeof(hagg_iter_t));
 
 	Assert(aggfnoids);
-	agg->ncol = 0;
+	agg->ncol = get_ncol_from_aggfnoids(aggfnoids);
 
 	agg->hagg = hagg_start(agg, 100, ".", keyeq, init, trans);
 
@@ -187,19 +203,27 @@ xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_at
 	return 0;
 }
 
+void xrg_agg_destroy(xrg_agg_t *agg) {
+	if (agg) {
+		if (agg->hagg) {
+			hagg_release(agg->hagg);
+		}
+
+	}
+}
+
+
 
 static int xrg_agg_process(xrg_agg_t *agg, kite_result_t *res) {
 	char errmsg[1024];
 	xrg_iter_t *iter = 0;
 	char *buf = 0;
 	int buflen = 0;
-
-	/*
 	if (res->ncol != agg->ncol) {
-		elog(ERROR, "xrg_agg_process: number of columns returned from kite not match (%d != %d)", agg->ncol, res->ncol);
+		elog(ERROR, "xrg_agg_process: number of columns returned from kite not match (%d != %d)", 
+				agg->ncol, res->ncol);
 		return 1;
 	}
-	*/
 
 	while ((iter = kite_result_next(res)) != 0) {
 		int len = 0;
