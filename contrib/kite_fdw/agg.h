@@ -13,6 +13,7 @@ struct kite_target_t {
 	Oid aggfn;
 	int pgattr;
 	List *attrs;
+	bool gbykey;
 	void *data;
 };
 
@@ -31,6 +32,7 @@ struct xrg_agg_t {
 	xrg_attr_t *attr;
 	bool reached_eof;
 
+	kite_target_t *tlist;
 };
 
 xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_attrs);

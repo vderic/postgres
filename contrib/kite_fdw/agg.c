@@ -196,6 +196,11 @@ static void build_tlist(xrg_agg_t *agg) {
 	}
 
 	tlist = (kite_target_t*) palloc(sizeof(kite_target_t) * attrlen);
+	if (!tlist) {
+		elog(ERROR, "out of memory");
+		return;
+	}
+
 	memset(tlist, 0, sizeof(kite_target_t) * attrlen);
 
 	foreach (lc, agg->retrieved_attrs) {
@@ -211,6 +216,20 @@ static void build_tlist(xrg_agg_t *agg) {
 		}
 	}
 
+	if (agg->groupby_attrs) {
+		foreach (lc, agg->groupby_attrs) {
+			int gbyidx = lfirst_int(lc);
+			ListCell *lc2;
+			for (int i = 0 ; i < attrlen ; i++) {
+				int idx = linitial_int(tlist[i].attrs);
+				if (gbyidx == idx) {
+					tlist[i].gbykey = true;
+				}
+			}
+		}
+	}
+
+	agg->tlist = tlist;
 }
 
 
