@@ -4090,7 +4090,7 @@ appendKiteGroupByIndex(List *tlist, List **retrieved_groupby_attrs, deparse_expr
         	tle = get_sortgroupref_tle(grp->tleSortGroupRef, tlist);
         	gbyidx = deparseKiteGroupIndex(tle->resno, tlist);
 
-		*retrieved_groupby_attrs = lappend_int(*retrieved_groupby_attrs, gbyidx);
+		*retrieved_groupby_attrs = lappend_int(*retrieved_groupby_attrs, gbyidx-1);
         }
 }
 

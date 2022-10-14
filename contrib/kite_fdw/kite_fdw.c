@@ -56,6 +56,7 @@
 #include "dec.h"
 #include "json.h"
 #include "kite_client.h"
+#include "decode.h"
 
 PG_MODULE_MAGIC;
 
@@ -2120,7 +2121,13 @@ fetch_more_data(ForeignScanState *node)
 		sockstream_t *sockstream = fsstate->sockstream;
 		int numrows;
 		int i;
-		res = kite_get_result(sockstream, fsstate->attinmeta, fsstate->retrieved_attrs);
+
+
+		res = kite_get_result(sockstream);
+		if (! res) {
+			numrows = 0;
+                	fsstate->eof_reached = (numrows == 0);
+		} else {
 
                 /* Convert the data into HeapTuples */
 		numrows = kite_result_get_nrow(res);
@@ -2141,6 +2148,7 @@ fetch_more_data(ForeignScanState *node)
                                                                                    node,
                                                                                    fsstate->temp_cxt);
                 }
+		}
 
                 /* Update fetch_ct_2 */
                 if (fsstate->fetch_ct_2 < 2)
@@ -2151,7 +2159,7 @@ fetch_more_data(ForeignScanState *node)
         }
         PG_FINALLY();
         {
-                kite_result_destroy(res);
+                if (res) kite_result_destroy(res);
         }
         PG_END_TRY();
 
@@ -3778,6 +3786,8 @@ make_tuple_from_result_row(kite_result_t *res,
 	ErrorContextCallback errcallback;
 	MemoryContext oldcontext;
 	ListCell   *lc;
+	xrg_iter_t *iter = 0;
+	int j = 0;
 
 	Assert(row < kite_result_get_nrow(res));
 
@@ -3816,8 +3826,18 @@ make_tuple_from_result_row(kite_result_t *res,
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
 
-	kite_result_scan_row(res, attinmeta, retrieved_attrs, row, values, nulls);
+	iter = kite_result_next(res);
+	if (!iter) {
+		elog(ERROR, "xrg_iter_t is NULL");
+	}
 
+	j = 0;
+	foreach  (lc, retrieved_attrs) {
+		int i = lfirst_int(lc);
+		var_decode(iter, j, attinmeta->atttypmods[i-1], &values[i-1], &nulls[i-1]);
+		j++;
+	}
+	
 	/* Uninstall error context callback. */
 	error_context_stack = errcallback.previous;
 
