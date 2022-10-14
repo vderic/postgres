@@ -207,9 +207,10 @@ static void get_relation_column_alias_ids(Var *node, RelOptInfo *foreignrel,
 static int deparseKiteGroupIndex(int resno, List *tlist);
 static void appendKiteGroupByIndex(List *tlist, List **retrieved_groupby_attrs, deparse_expr_cxt *context);
 
-static inline bool aggfnoid_is_avg(int aggfnoid) {
+bool aggfnoid_is_avg(int aggfnoid) {
 	return (aggfnoid >= 2100 && aggfnoid <= 2105);
 }
+
 
 /*
  * Examine each qual clause in input_conds, and classify them into two groups,

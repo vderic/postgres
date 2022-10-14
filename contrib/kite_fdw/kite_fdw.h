@@ -243,6 +243,8 @@ extern void deparseSelectStmtForRel(StringInfo buf, PlannerInfo *root,
 									List **retrieved_groupby_attrs);
 extern const char *get_jointype_name(JoinType jointype);
 
+extern bool aggfnoid_is_avg(int aggfnoid);
+
 /* in shippable.c */
 extern bool is_builtin(Oid objectId);
 extern bool is_shippable(Oid objectId, Oid classId, PgFdwRelationInfo *fpinfo);

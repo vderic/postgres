@@ -20,6 +20,7 @@ struct xrg_agg_t {
 	List *retrieved_attrs;
 
 	xrg_attr_t *attr;
+	bool reached_eof;
 
 };
 
