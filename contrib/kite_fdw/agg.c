@@ -1,4 +1,5 @@
 #include "agg.h"
+#include "hop/komihash.h"
 
 extern bool aggfnoid_is_avg(int aggfnoid);
 
@@ -287,6 +288,8 @@ static int xrg_agg_process(xrg_agg_t *agg, kite_result_t *res) {
 	xrg_iter_t *iter = 0;
 	char *buf = 0;
 	int buflen = 0;
+	ListCell *lc;
+
 	if (res->ncol != agg->ncol) {
 		elog(ERROR, "xrg_agg_process: number of columns returned from kite not match (%d != %d)", 
 				agg->ncol, res->ncol);
@@ -295,12 +298,25 @@ static int xrg_agg_process(xrg_agg_t *agg, kite_result_t *res) {
 
 	while ((iter = kite_result_next(res)) != 0) {
 		int len = 0;
-		uint64_t hval = 0; // TODO: hash value of the groupby keys
+		uint64_t hval = 0; // hash value of the groupby keys
 
 		if (! agg->attr) {
 			agg->attr = (xrg_attr_t *) palloc(sizeof(xrg_attr_t) * iter->nitem);
-			agg->ncol = iter->nitem;
+			//agg->ncol = iter->nitem;
 			memcpy(agg->attr, iter->attr, sizeof(xrg_attr_t) * iter->nitem);
+		}
+
+		foreach (lc, agg->groupby_attrs) {
+			int idx = lfirst_int(lc);
+			int itemsz = iter->attr[idx].itemsz;
+			const char *p = iter->value[idx];
+			if (itemsz < 0) {
+				itemsz = xrg_bytea_len(iter->value[idx]);
+				p = xrg_bytea_ptr(iter->value[idx]);
+			}
+
+			hval ^= komihash(p, itemsz, 0);  // XOR
+
 		}
 
 		len = serialize(iter, &buf, &buflen);
