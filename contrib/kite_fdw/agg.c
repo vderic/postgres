@@ -201,10 +201,17 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 		kite_target_t *tgt = &agg->tlist[i];
 		int k = tgt->pgattr;
 		void *transdata = translist[i];
+		Oid aggfn = tgt->aggfn;
 
 		// datums[k] =  value[i]
 		if (transdata) {
 			// finalize_aggregate();
+			if (aggfnoid_is_avg(aggfn)) {
+				//finalize_avg();
+				avg_decode(aggfn, transdata, 0, attr, attinmeta->atttypmods[k-1], &datums[k-1], &flags[k-1]);
+			} else {
+				var_decode(transdata, 0, attr, attinmeta->atttypmods[k-1], &datums[k-1], &flags[k-1]);
+			}
 
 			int top = list_length(tgt->attrs);
 			for (int j = 0 ; j < top ; j++) {

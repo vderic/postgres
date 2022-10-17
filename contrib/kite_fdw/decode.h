@@ -7,4 +7,6 @@
 /* decode functions */
 int var_decode(char *data, char flag, xrg_attr_t *attr, int atttypmod, Datum *pg_datum, bool *pg_isnull);
 
+int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, int atttypmod, Datum *pg_datum, bool *pg_isnull);
+
 #endif
