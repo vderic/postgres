@@ -2,7 +2,7 @@
 
 extern bool aggfnoid_is_avg(int aggfnoid);
 
-static char *column_next(xrg_attr_t *attr, char *p) {
+static const char *column_next(xrg_attr_t *attr, const char *p) {
 	if (attr->itemsz > 0) {
 		p +=  attr->itemsz;
 	} else {
@@ -12,9 +12,9 @@ static char *column_next(xrg_attr_t *attr, char *p) {
 	return p;
 }
 
-static char *get_tuple(const void *rec, xrg_attr_t *attrs, int cno) {
+static const char *get_tuple(const void *rec, xrg_attr_t *attrs, int cno) {
 
-	char *p = (char *) rec;
+	const char *p = rec;
 	for (int i = 0 ; i < cno ; i++, attrs++) {
 		p = column_next(attrs, p);
 	}
@@ -40,101 +40,115 @@ static int get_ncol_from_aggfnoids(List *aggfnoids) {
 
 static int keyeq(void *context, const void *rec1, const void *rec2) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
-	ListCell *lc;
+	const char *p1, *p2;
+	int itemsz = 0;
+	xrg_attr_t *attr = agg->attr;
+	int ngrpby = 0;
 
 	if (! agg->groupby_attrs) {
 		return 1;
 	}
 
-	foreach (lc, agg->groupby_attrs) {
-		int gby = lfirst_int(lc);
-		char *data1 = get_tuple(rec1, agg->attr, gby);
-		int itemsz = agg->attr[gby].itemsz;
-		char *data2 = get_tuple(rec2, agg->attr, gby);
+	ngrpby = list_length(agg->groupby_attrs);
+	p1 = rec1;
+	p2 = rec2;
+	for (int i = 0, n = 0 ; i < agg->ntlist && n < ngrpby ; i++) {
+
+		if (! agg->tlist[i].gbykey) {
+			int top = list_length(agg->tlist[i].attrs);
+			for (int j = 0 ; j < top ; j++) {
+				p1 = column_next(attr, p1);
+				p2 = column_next(attr, p2);
+				attr++;
+			}
+			continue;
+		}
+
+		itemsz = attr->itemsz;
 
 		if (itemsz > 0) {
-			if (memcmp(data1, data2, itemsz) != 0) {
+			if (memcmp(p1, p2, itemsz) != 0) {
 				return 0;
 			}
 		} else {
-			//bytea
-
-			int itemsz1 = xrg_bytea_len(data1);
-			int itemsz2 = xrg_bytea_len(data2);
-			char* ptr1 = xrg_bytea_ptr(data1);
-			char* ptr2 = xrg_bytea_ptr(data2);
+			int itemsz1 = xrg_bytea_len(p1);
+			int itemsz2 = xrg_bytea_len(p2);
+			const char* ptr1 = xrg_bytea_ptr(p1);
+			const char* ptr2 = xrg_bytea_ptr(p2);
 
 			if (itemsz1 != itemsz2 || memcmp(ptr1, ptr2, itemsz1) != 0) {
 				return 0;
 			}
 		}
+
+		p1 = column_next(attr, p1);
+		p2 = column_next(attr, p2);
+		attr++;
+		n++;
 	}
 
 	return 1;
 }
 
-static void *transdata_create(Oid aggfn, xrg_attr_t *attr, char *p) {
+static void *transdata_create(Oid aggfn, xrg_attr_t *attr, const char *p) {
 
 	return 0;
 }
 
-static void *transdata2_create(Oid aggfn, xrg_attr_t *attr1, char *p1, xrg_attr_t *attr2, char *p2) {
+static void *transdata2_create(Oid aggfn, xrg_attr_t *attr1, const char *p1, xrg_attr_t *attr2, const char *p2) {
 
 
 	return 0;
 }
 
 static void *init(void *context, const void *rec) {
-
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	ListCell *lc;
 	int sz = 0;
-	char *p = (char *) rec;
-	List *agglist = NIL;
+	const char *p = rec;
+	int naggfnoid = list_length(agg->aggfnoids);
+	void ** translist = (void **) palloc(sizeof(void*) * naggfnoid);
 
 	int i = 0;
 	xrg_attr_t *attr = agg->attr;
 	foreach (lc, agg->aggfnoids) {
 		Oid fn = lfirst_oid(lc);
 		if (fn > 0) {
+			void *transdata =0;
 			if (aggfnoid_is_avg(fn)) {
-				char *p1 = p;
+				const char *p1 = p;
 				xrg_attr_t *attr1 = attr++;
-				char *p2 = column_next(attr1, p1);
+				const char *p2 = column_next(attr1, p1);
 				xrg_attr_t *attr2 = attr++;
-				void *transdata = transdata2_create(fn, attr1, p1, attr2, p2);
-				agglist = lappend(agglist, transdata);
-
 				p = column_next(attr2, p2);
-				i += 2;
+				transdata = transdata2_create(fn, attr1, p1, attr2, p2);
+				translist[i] = transdata;
 			} else {
-				void *transdata = transdata_create(fn, attr, p);
-				agglist = lappend(agglist, transdata);
-
+				transdata = transdata_create(fn, attr, p);
+				translist[i] = transdata;
 				p = column_next(attr, p);
-
 				attr++;
-				i++;
 			}
 		} else {
+			translist[i] = 0;
 			p = column_next(attr, p);
 			attr++;
-			i++;
 		}
+		i++;
 	}
 
-	return agglist;
+	return translist;
 }
 
 static void *trans(void *context, const void *rec, void *data) {
-	List *translist = (List *)data;
+	void **translist = (void  **)data;
 
 
 	return 0;
 }
 
 static void finalize(void *context, const void *rec, void *data) {
-	List *translist = (List *)data;
+	void **translist = (void  **)data;
 
 }
 
@@ -194,8 +208,9 @@ static void build_tlist(xrg_agg_t *agg) {
 		elog(ERROR, "build_tlist: attrlen != aggfnlen");
 		return;
 	}
+	agg->ntlist = aggfnlen;
 
-	tlist = (kite_target_t*) palloc(sizeof(kite_target_t) * attrlen);
+	tlist = (kite_target_t*) palloc(sizeof(kite_target_t) * agg->ntlist);
 	if (!tlist) {
 		elog(ERROR, "out of memory");
 		return;
@@ -219,7 +234,6 @@ static void build_tlist(xrg_agg_t *agg) {
 	if (agg->groupby_attrs) {
 		foreach (lc, agg->groupby_attrs) {
 			int gbyidx = lfirst_int(lc);
-			ListCell *lc2;
 			for (int i = 0 ; i < attrlen ; i++) {
 				int idx = linitial_int(tlist[i].attrs);
 				if (gbyidx == idx) {

@@ -32,6 +32,7 @@ struct xrg_agg_t {
 	xrg_attr_t *attr;
 	bool reached_eof;
 
+	int ntlist;
 	kite_target_t *tlist;
 };
 
