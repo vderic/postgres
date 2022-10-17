@@ -87,10 +87,181 @@ int avg_trans_init(int32_t aggfn, avg_trans_t *pt, const void *p1, xrg_attr_t *a
         return 0;
 }
 
-void aggregate(int32_t aggfn, void *transdata, const void *data, xrg_attr_t *attr) {
+
+#define MAX(T, PA, PB) \
+{ \
+	T A = *((T *) PA); \
+	T B = *((T *) PB); \
+	if (B > A) {      \
+	    *((T *) PA) = B;  \
+	}                  \
+} 
+
+
+#define MIN(T, PA, PB)  \
+{ \
+        T A = *((T *) PA); \
+        T B = *((T *) PB); \
+        if (B < A) {      \
+            *((T *) PA) = B;  \
+        }                  \
+} 
+
+
+#define ADD(T, PA, PB) \
+{ \
+	*((T *) PA) += *((T *) PB); \
+}
+	
+void avg_int128(void *transdata, const void *data, xrg_attr_t *attr) {
 
 }
 
+void avg_int64(void *transdata, const void *data, xrg_attr_t *attr) {
+
+}
+
+void avg_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
+
+}
+
+void avg_double(void *transdata, const void *data, xrg_attr_t *attr) {
+
+}
+
+void sum_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
+
+}
+
+void min_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
+
+}
+
+void max_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
+
+}
+
+void aggregate(int32_t aggfn, void *transdata, const void *data, xrg_attr_t *attr) {
+
+	switch (aggfn) {
+	case 2147: // PG_PROC_count_2147:
+		ADD(int64_t, transdata, data);
+		return;
+	case 2803: // PG_PROC_count_2803:
+		ADD(int64_t, transdata, data);
+		return;
+	case 2100: // PG_PROC_avg_2100: /* avg int8 */
+		avg_int128(transdata, data, attr);
+		return;
+	case 2101: // PG_PROC_avg_2101: /* avg int4 */
+	case 2102: // PG_PROC_avg_2102: /* avg int2 */
+		avg_int64(transdata, data, attr);
+		return;
+	case 2103: // PG_PROC_avg_2103: /* avg numeric */
+		avg_numeric(transdata, data, attr);
+		return;
+	case 2104: // PG_PROC_avg_2104: /* avg float4 */
+	case 2105: // PG_PROC_avg_2105: /* avg float8 */
+		/* 2106 is avg interval, not supported yet. */
+		avg_double(transdata, data, attr);
+		return;
+
+	case 2107: // PG_PROC_sum_2107: /* sum int8 */
+		ADD(__int128_t, transdata, data);
+		return;
+	case 2108: // PG_PROC_sum_2108: /* sum int4 */
+	case 2109: // PG_PROC_sum_2109: /* sum int2 */
+		ADD(int64_t, transdata, data);
+		return;
+	case 2110: // PG_PROC_sum_2110: /* sum float4 */
+	case 2111: // PG_PROC_sum_2111: /* sum float8 */
+		/* 2112 is sum cash, nyi */
+		/* 2113 is sum interval, nyi */
+		ADD(double, transdata, data);
+		return;
+	case 2114: // PG_PROC_sum_2114: /* sum numeric */
+		sum_numeric(transdata, data, attr);
+		return;
+	case 2115: // PG_PROC_max_2115: /* int8 */
+		MAX(int64_t, transdata, data);
+		return;
+	case 2116: // PG_PROC_max_2116: /* int4 */
+		MAX(int32_t, transdata, data);
+		return;
+	case 2117: // PG_PROC_max_2117: /* int2 */
+			   /* 2118 is oid, nyi */
+		MAX(int16_t, transdata, data);
+		return;
+	case 2119: // PG_PROC_max_2119: /* float4 */
+		MAX(float, transdata, data);
+		return;
+	case 2120: // PG_PROC_max_2120: /* float8 */
+			   /* 2121 is abstime, nyi */
+		MAX(double, transdata, data);
+		return;
+	case 2122: // PG_PROC_max_2122: /* date, same as int4 */
+		MAX(int32_t, transdata, data);
+		return;
+	case 2123: // PG_PROC_max_2123: /* time, same as int8 */
+			   /* 2124 is time tz, nyi */
+	case 2125: // PG_PROC_max_2125: /* money/cash, same as int8 */
+	case 2126: // PG_PROC_max_2126: /* timestamp, same as int8 */
+	case 2127: // PG_PROC_max_2127: /* timestamptz, same as int8 */
+			   /* 2128, interval nyi */
+			   /* NOTE the following: what about collation? */
+			   /* case PG_PROC_max_2129:       text */
+		MAX(int64_t, transdata, data);
+		return;
+	case 2130: // PG_PROC_max_2130: /* numeric */
+		/* 2050, any arrray nyi */
+		/* 2244, bpchar, nyi */
+		/* 2797, tid, nyi */
+		max_numeric(transdata, data, attr);
+		return;
+
+	case 2131: // PG_PROC_min_2131: /* int8 */
+		MIN(int64_t, transdata, data);
+		return;
+	case 2132: // PG_PROC_min_2132: /* int4 */
+		MIN(int32_t, transdata, data);
+		return;
+	case 2133: // PG_PROC_min_2133: /* int2 */
+			   /* 2134 is oid, nyi */
+		MIN(int16_t, transdata, data);
+		return;
+	case 2135: // PG_PROC_min_2135: /* float4 */
+		MIN(float, transdata, data);
+		return;
+	case 2136: // PG_PROC_min_2136: /* float8 */
+			   /* 2137 is abstime, nyi */
+		MIN(double, transdata, data);
+		return;
+	case 2138: // PG_PROC_min_2138: /* date */
+		MIN(int32_t, transdata, data);
+		return;
+	case 2139: // PG_PROC_min_2139: /* time */
+			   /* 2140 is timetz, nyi */
+	case 2141: // PG_PROC_min_2141: /* money/cash */
+	case 2142: // PG_PROC_min_2142: /* timestamp */
+	case 2143: // PG_PROC_min_2143: /* timestamptz */
+			   /* 2144, internval */
+			   /* NOTE: text, collation? */
+			   /* case PG_PROC_min_2145:       */
+		MIN(int64_t, transdata, data);
+		return;
+	case 2146: // PG_PROC_min_2146: /* numeric */
+		/* 2051 is any array, nyi */
+		/* 2245 bpchar nyi */
+		/* 2798 tid nyi */
+		min_numeric(transdata, data, attr);
+		return;
+
+	default:
+		return;
+	}
+}
+
+   
 #if 0
 static inline int32_t pg_agg_to_op(int32_t funcid) {
 	switch (funcid) {
