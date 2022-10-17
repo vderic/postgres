@@ -91,12 +91,8 @@ static int keyeq(void *context, const void *rec1, const void *rec2) {
 	return 1;
 }
 
-static void *transdata_create(Oid aggfn, xrg_attr_t *attr, const char *p) {
-
-	return 0;
-}
-
-static void *transdata2_create(Oid aggfn, xrg_attr_t *attr1, const char *p1, xrg_attr_t *attr2, const char *p2) {
+static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, const char *p1, 
+		xrg_attr_t *attr2, const char *p2, int nattr) {
 
 
 	return 0;
@@ -122,10 +118,10 @@ static void *init(void *context, const void *rec) {
 				const char *p2 = column_next(attr1, p1);
 				xrg_attr_t *attr2 = attr++;
 				p = column_next(attr2, p2);
-				transdata = transdata2_create(fn, attr1, p1, attr2, p2);
+				transdata = transdata_create(fn, attr1, p1, attr2, p2, 2);
 				translist[i] = transdata;
 			} else {
-				transdata = transdata_create(fn, attr, p);
+				transdata = transdata_create(fn, attr, p, 0, 0, 1);
 				translist[i] = transdata;
 				p = column_next(attr, p);
 				attr++;
@@ -142,15 +138,83 @@ static void *init(void *context, const void *rec) {
 }
 
 static void *trans(void *context, const void *rec, void *data) {
+	xrg_agg_t *agg = (xrg_agg_t *) context;
 	void **translist = (void  **)data;
+	const char *p = rec;
+	xrg_attr_t *attr = agg->attr;
+
+	for (int i = 0 ; i < agg->ntlist ; i++) {
+		kite_target_t *tgt = &agg->tlist[i];
+		int nkiteattr = list_length(tgt->attrs);
+		Oid aggfn = tgt->aggfn;
+		void *transdata = translist[i];
+
+		if (! transdata) {
+			p = column_next(attr, p);
+			attr++;
+			continue;
+		}
+
+		if (nkiteattr == 1) {
+			tupledata_t pt;
+
+			if (tupledata_primitive_init(aggfn, &pt, p, attr) != 0) {
+				elog(ERROR, "primitive_init failed");
+				return 0;
+			}
+			aggregate(aggfn, transdata, &pt, attr);
+			p = column_next(attr, p);
+			attr++;
+			continue;
+		}
 
 
-	return 0;
+		if (nkiteattr == 2) {
+			tupledata_t pt;
+			const char *p1 = p;
+			xrg_attr_t *attr1 = attr++;
+			const char *p2 = column_next(attr1, p1);
+			xrg_attr_t *attr2 = attr++;
+			p = column_next(attr2, p2);
+
+			if (tupledata_avg_init(aggfn, &pt, p1, attr1, p2, attr1) != 0) {
+				elog(ERROR, "avg_trans_init failed");
+				return 0;
+			}
+
+			aggregate(aggfn, transdata, &pt, attr1);
+			continue;
+		}
+	}
+
+	return data;
 }
 
-static void finalize(void *context, const void *rec, void *data) {
+static void finalize(void *context, const void *rec, void *data, AttInMetadata *attinmeta,
+	       	Datum *datums, bool *flags, int ndatum) {
+	xrg_agg_t *agg = (xrg_agg_t *) context;
 	void **translist = (void  **)data;
+	const char *p = rec;
+	xrg_attr_t *attr = agg->attr;
 
+	for (int i = 0 ; i < agg->ntlist ; i++) {
+		kite_target_t *tgt = &agg->tlist[i];
+		int k = tgt->pgattr;
+		void *transdata = translist[i];
+
+		// datums[k] =  value[i]
+		if (transdata) {
+			// finalize_aggregate();
+
+			int top = list_length(tgt->attrs);
+			for (int j = 0 ; j < top ; j++) {
+				p = column_next(attr++, p);
+			}
+		} else {
+			var_decode(p, 0, attr, attinmeta->atttypmods[k-1], &datums[k-1], &flags[k-1]);
+			p = column_next(attr++, p);
+		}
+	}
 }
 
 static int get_serialize_size(xrg_iter_t *iter) {
@@ -331,7 +395,7 @@ static int xrg_agg_process(xrg_agg_t *agg, kite_result_t *res) {
 	return 0;
 }
 
-int xrg_agg_get_next(xrg_agg_t *agg, sockstream_t *ss, Datum *datums, bool *flag, int n) {
+int xrg_agg_get_next(xrg_agg_t *agg, sockstream_t *ss, AttInMetadata *attinmeta, Datum *datums, bool *flags, int n) {
 
 	const void *rec = 0;
 	void *data = 0;
@@ -380,7 +444,7 @@ int xrg_agg_get_next(xrg_agg_t *agg, sockstream_t *ss, Datum *datums, bool *flag
 		}
 	}
 	
-	finalize(agg, rec, data);
+	finalize(agg, rec, data, attinmeta, datums, flags, n);
 
 
 	return 0;

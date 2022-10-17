@@ -57,13 +57,11 @@ static Datum decode_timestamp(char *data) {
 }
 
 /* decode functions */
-int var_decode(xrg_iter_t *iter, int idx, int atttypmod, Datum *pg_datum, bool *pg_isnull) {
-	char *data = iter->value[idx];
-	char flag = *iter->flag[idx];
-	int ltyp = iter->attr[idx].ltyp;
-	int ptyp = iter->attr[idx].ptyp;
-	int precision = iter->attr[idx].precision;
-	int scale = iter->attr[idx].scale;
+int var_decode(char *data, char flag, xrg_attr_t *attr, int atttypmod, Datum *pg_datum, bool *pg_isnull) {
+	int ltyp = attr->ltyp;
+	int ptyp = attr->ptyp;
+	int precision = attr->precision;
+	int scale = attr->scale;
 
 	// data in iter->value[idx] and iter->flag[idx] and iter->attrs[idx].ptyp
 	*pg_isnull = (flag & XRG_FLAG_NULL);

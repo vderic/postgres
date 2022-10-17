@@ -5,6 +5,6 @@
 #include "xrg.h"
 
 /* decode functions */
-int var_decode(xrg_iter_t *iter, int idx, int atttypmod, Datum *pg_datum, bool *pg_isnull);
+int var_decode(char *data, char flag, xrg_attr_t *attr, int atttypmod, Datum *pg_datum, bool *pg_isnull);
 
 #endif

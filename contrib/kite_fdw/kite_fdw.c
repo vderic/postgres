@@ -3834,7 +3834,8 @@ make_tuple_from_result_row(kite_result_t *res,
 	j = 0;
 	foreach  (lc, retrieved_attrs) {
 		int i = lfirst_int(lc);
-		var_decode(iter, j, attinmeta->atttypmods[i-1], &values[i-1], &nulls[i-1]);
+		var_decode(iter->value[j], *iter->flag[j], &iter->attr[j], attinmeta->atttypmods[i-1], 
+				&values[i-1], &nulls[i-1]);
 		j++;
 	}
 	

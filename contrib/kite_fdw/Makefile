@@ -12,6 +12,7 @@ OBJS = \
 	json.o \
 	kite_client.o \
 	decode.o \
+	op.o \
 	agg.o
 
 PGFILEDESC = "postgres_fdw - foreign data wrapper for PostgreSQL"
