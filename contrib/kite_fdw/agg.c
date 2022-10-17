@@ -95,8 +95,27 @@ static int keyeq(void *context, const void *rec1, const void *rec2) {
 static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, const char *p1, 
 		xrg_attr_t *attr2, const char *p2, int nattr) {
 
+	void *p = 0;
+	if (aggfnoid_is_avg(aggfn)) {
+		if (nattr != 2) {
+			elog(ERROR, "avg need 2 attributes sum and count");
+			return 0;
+		}
+		avg_trans_t *avg = (avg_trans_t *) palloc(sizeof(avg_trans_t));
+		avg_trans_init(aggfn, avg, p1, attr1, p2, attr2);
+		p = (void *) avg;
 
-	return 0;
+	} else {
+		if (attr1->itemsz < 0) {
+			elog(ERROR, "transdata_create: aggregate function does not support string");
+			return 0;
+		}
+
+		p =  (void *) palloc(sizeof(attr1->itemsz));
+		memcpy(p, p1, attr1->itemsz);
+	}
+
+	return p;
 }
 
 static void *init(void *context, const void *rec) {

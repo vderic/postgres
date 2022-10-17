@@ -59,6 +59,31 @@ int tupledata_avg_init(int32_t aggfn, tupledata_t *pt, const void *p1, xrg_attr_
         return 0;
 }
 
+int avg_trans_init(int32_t aggfn, avg_trans_t *pt, const void *p1, xrg_attr_t *attr1,
+                const void *p2, xrg_attr_t *attr2) {
+
+	if (attr2->ptyp != XRG_PTYP_INT64) {
+		return 1;
+	}
+	pt->count = *((int64_t*) p2);
+
+	switch (attr1->ptyp) {
+	case XRG_PTYP_INT64:
+		pt->sum.i64 = *((int64_t *) p1);
+		break;
+	case XRG_PTYP_INT128:
+		pt->sum.i128 = *((__int128_t *)p1);
+		break;
+	case XRG_PTYP_FP64:
+		pt->sum.fp64 = *((double *) p1);
+		break;
+	default:
+		return 1;
+	}
+
+        return 0;
+}
+
 void aggregate(int32_t aggfn, void *transdata, tupledata_t *p, xrg_attr_t *attr) {
 
 }

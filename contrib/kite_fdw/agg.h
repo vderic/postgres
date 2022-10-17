@@ -41,6 +41,17 @@ int xrg_agg_get_next(xrg_agg_t *agg, sockstream_t *ss, AttInMetadata *attinmeta,
 
 void xrg_agg_destroy(xrg_agg_t *agg);
 
+/* avg_trans_t */
+typedef struct avg_trans_t avg_trans_t;
+struct avg_trans_t {
+	union {
+		int64_t i64;
+		__int128_t i128;
+		double fp64;
+	} sum;
+	int64_t count;
+};
+
 /* tuple data */
 typedef union tupledata_t tupledata_t;
 union tupledata_t {
