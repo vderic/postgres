@@ -1,5 +1,6 @@
 #include "agg.h"
 
+#if 0
 int tupledata_primitive_init(int32_t aggfn, tupledata_t *pt, const void *p, xrg_attr_t *attr) {
 	switch (attr->ptyp) {
 		case XRG_PTYP_INT8:
@@ -59,6 +60,8 @@ int tupledata_avg_init(int32_t aggfn, tupledata_t *pt, const void *p1, xrg_attr_
         return 0;
 }
 
+#endif
+
 int avg_trans_init(int32_t aggfn, avg_trans_t *pt, const void *p1, xrg_attr_t *attr1,
                 const void *p2, xrg_attr_t *attr2) {
 
@@ -84,7 +87,7 @@ int avg_trans_init(int32_t aggfn, avg_trans_t *pt, const void *p1, xrg_attr_t *a
         return 0;
 }
 
-void aggregate(int32_t aggfn, void *transdata, tupledata_t *p, xrg_attr_t *attr) {
+void aggregate(int32_t aggfn, void *transdata, const void *data, xrg_attr_t *attr) {
 
 }
 

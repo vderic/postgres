@@ -52,6 +52,7 @@ struct avg_trans_t {
 	int64_t count;
 };
 
+#if 0
 /* tuple data */
 typedef union tupledata_t tupledata_t;
 union tupledata_t {
@@ -77,8 +78,12 @@ int tupledata_primitive_init(int32_t aggfn, tupledata_t *pt, const void *p, xrg_
 
 int tupledata_avg_init(int32_t aggfn, tupledata_t *pt, const void *p1, xrg_attr_t *attr1,
                 const void *p2, xrg_attr_t *attr2);
+#endif
 
-void aggregate(int32_t aggfn, void *transdata, tupledata_t *p, xrg_attr_t *attr);
+int avg_trans_init(int32_t aggfn, avg_trans_t *pt, const void *p1, xrg_attr_t *attr1,
+                const void *p2, xrg_attr_t *attr2);
+
+void aggregate(int32_t aggfn, void *transdata, const void *data, xrg_attr_t *attr);
 
 #endif
 

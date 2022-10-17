@@ -97,11 +97,12 @@ static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, const char *p1,
 
 	void *p = 0;
 	if (aggfnoid_is_avg(aggfn)) {
+		avg_trans_t *avg = 0;
 		if (nattr != 2) {
 			elog(ERROR, "avg need 2 attributes sum and count");
 			return 0;
 		}
-		avg_trans_t *avg = (avg_trans_t *) palloc(sizeof(avg_trans_t));
+		avg = (avg_trans_t *) palloc(sizeof(avg_trans_t));
 		avg_trans_init(aggfn, avg, p1, attr1, p2, attr2);
 		p = (void *) avg;
 
@@ -176,13 +177,15 @@ static void *trans(void *context, const void *rec, void *data) {
 		}
 
 		if (nkiteattr == 1) {
+			/*
 			tupledata_t pt;
 
 			if (tupledata_primitive_init(aggfn, &pt, p, attr) != 0) {
 				elog(ERROR, "primitive_init failed");
 				return 0;
 			}
-			aggregate(aggfn, transdata, &pt, attr);
+			*/
+			aggregate(aggfn, transdata, p, attr);
 			p = column_next(attr, p);
 			attr++;
 			continue;
@@ -190,14 +193,14 @@ static void *trans(void *context, const void *rec, void *data) {
 
 
 		if (nkiteattr == 2) {
-			tupledata_t pt;
+			avg_trans_t pt;
 			const char *p1 = p;
 			xrg_attr_t *attr1 = attr++;
 			const char *p2 = column_next(attr1, p1);
 			xrg_attr_t *attr2 = attr++;
 			p = column_next(attr2, p2);
 
-			if (tupledata_avg_init(aggfn, &pt, p1, attr1, p2, attr1) != 0) {
+			if (avg_trans_init(aggfn, &pt, p1, attr1, p2, attr1) != 0) {
 				elog(ERROR, "avg_trans_init failed");
 				return 0;
 			}
