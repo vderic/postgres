@@ -1,4 +1,5 @@
 #include "agg.h"
+#include "decode.h"
 #include "hop/komihash.h"
 
 extern bool aggfnoid_is_avg(int aggfnoid);
@@ -205,6 +206,7 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 
 		// datums[k] =  value[i]
 		if (transdata) {
+			int top = list_length(tgt->attrs);
 			// finalize_aggregate();
 			if (aggfnoid_is_avg(aggfn)) {
 				//finalize_avg();
@@ -213,12 +215,11 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 				var_decode(transdata, 0, attr, attinmeta->atttypmods[k-1], &datums[k-1], &flags[k-1]);
 			}
 
-			int top = list_length(tgt->attrs);
 			for (int j = 0 ; j < top ; j++) {
 				p = column_next(attr++, p);
 			}
 		} else {
-			var_decode(p, 0, attr, attinmeta->atttypmods[k-1], &datums[k-1], &flags[k-1]);
+			var_decode((char *) p, 0, attr, attinmeta->atttypmods[k-1], &datums[k-1], &flags[k-1]);
 			p = column_next(attr++, p);
 		}
 	}
