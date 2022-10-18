@@ -219,7 +219,8 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 			}
 
 			for (int j = 0 ; j < top ; j++) {
-				p = column_next(attr++, p);
+				p = column_next(attr, p);
+				attr++;
 			}
 		} else {
 			var_decode((char *) p, 0, attr, attinmeta->atttypmods[k-1], &datums[k-1], &flags[k-1]);
@@ -240,7 +241,8 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 static int get_serialize_size(xrg_iter_t *iter) {
 
 	int sz = 0;
-	for (int i = 0 ; i < iter->nitem ; i++) {
+
+	for (int i = 0 ; i < iter->nvec ; i++) {
 		if (iter->attr[i].itemsz >= 0) {
 			sz += iter->attr[i].itemsz;
 		} else {
@@ -267,7 +269,7 @@ static int serialize(xrg_iter_t *iter, char **buf, int *buflen) {
 
 	p = *buf;
 
-	for (int i = 0 ; i < iter->nitem ; i++) {
+	for (int i = 0 ; i < iter->nvec ; i++) {
 		if (iter->attr[i].itemsz >= 0) {
 			memcpy(p, iter->value[i], iter->attr[i].itemsz);
 			p += iter->attr[i].itemsz;
@@ -303,8 +305,10 @@ static void build_tlist(xrg_agg_t *agg) {
 
 	memset(tlist, 0, sizeof(kite_target_t) * agg->ntlist);
 
+	i = 0;
 	foreach (lc, agg->retrieved_attrs) {
 		tlist[i].pgattr = lfirst_int(lc);
+		i++;
 	}
 
 	i = j = 0;
@@ -314,12 +318,13 @@ static void build_tlist(xrg_agg_t *agg) {
 		if (aggfnoid_is_avg(tlist[i].aggfn)) {
 			tlist[i].attrs = lappend_int(tlist[i].attrs, j++);
 		}
+		i++;
 	}
 
 	if (agg->groupby_attrs) {
 		foreach (lc, agg->groupby_attrs) {
 			int gbyidx = lfirst_int(lc);
-			for (int i = 0 ; i < attrlen ; i++) {
+			for (int i = 0 ; i < agg->ntlist ; i++) {
 				int idx = linitial_int(tlist[i].attrs);
 				if (gbyidx == idx) {
 					tlist[i].gbykey = true;
@@ -392,9 +397,9 @@ static int xrg_agg_process(xrg_agg_t *agg, kite_result_t *res) {
 
 
 		if (! agg->attr) {
-			agg->attr = (xrg_attr_t *) malloc(sizeof(xrg_attr_t) * iter->nitem);
-			//agg->ncol = iter->nitem;
-			memcpy(agg->attr, iter->attr, sizeof(xrg_attr_t) * iter->nitem);
+			agg->attr = (xrg_attr_t *) malloc(sizeof(xrg_attr_t) * iter->nvec);
+			//agg->ncol = iter->nvec;
+			memcpy(agg->attr, iter->attr, sizeof(xrg_attr_t) * iter->nvec);
 		}
 
 		foreach (lc, agg->groupby_attrs) {
