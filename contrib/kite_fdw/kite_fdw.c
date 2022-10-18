@@ -3875,6 +3875,7 @@ make_tuple_from_agg(xrg_agg_t *agg,
 	error_context_stack = &errcallback;
 
 	if (xrg_agg_get_next(agg, attinmeta, values, nulls, tupdesc->natts) != 0) {
+		MemoryContextSwitchTo(oldcontext);
 		MemoryContextReset(temp_context);
 		return 0;
 	}
