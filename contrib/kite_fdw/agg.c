@@ -14,16 +14,6 @@ static const char *column_next(xrg_attr_t *attr, const char *p) {
 	return p;
 }
 
-static const char *get_tuple(const void *rec, xrg_attr_t *attrs, int cno) {
-
-	const char *p = rec;
-	for (int i = 0 ; i < cno ; i++, attrs++) {
-		p = column_next(attrs, p);
-	}
-
-	return p;
-}
-
 static int get_ncol_from_aggfnoids(List *aggfnoids) {
 	ListCell *lc;
 	int i = 0;
@@ -122,7 +112,6 @@ static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, const char *p1,
 static void *init(void *context, const void *rec) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	ListCell *lc;
-	int sz = 0;
 	const char *p = rec;
 	int naggfnoid = list_length(agg->aggfnoids);
 	void ** translist = (void **) palloc(sizeof(void*) * naggfnoid);
@@ -177,14 +166,6 @@ static void *trans(void *context, const void *rec, void *data) {
 		}
 
 		if (nkiteattr == 1) {
-			/*
-			tupledata_t pt;
-
-			if (tupledata_primitive_init(aggfn, &pt, p, attr) != 0) {
-				elog(ERROR, "primitive_init failed");
-				return 0;
-			}
-			*/
 			aggregate(aggfn, transdata, p, attr);
 			p = column_next(attr, p);
 			attr++;
@@ -378,7 +359,6 @@ void xrg_agg_destroy(xrg_agg_t *agg) {
 
 
 static int xrg_agg_process(xrg_agg_t *agg, kite_result_t *res) {
-	char errmsg[1024];
 	xrg_iter_t *iter = 0;
 	char *buf = 0;
 	int buflen = 0;
