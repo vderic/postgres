@@ -1,4 +1,5 @@
 
+#include "agg.h"
 #include "decode.h"
 #include "decimal.h"
 #include "utils/timestamp.h"
@@ -159,5 +160,48 @@ int var_decode(char *data, char flag, xrg_attr_t *attr, int atttypmod, Datum *pg
 		return 0;
 	}
 
+	return 0;
+}
+
+int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, int atttypmod, Datum *pg_datum, bool *pg_isnull) {
+
+	avg_trans_t *accum = (avg_trans_t *)data;
+
+	switch (aggfn) {
+	case 2100: // PG_PROC_avg_2100: /* avg int8 */
+	{
+		__int128_t avg = accum->sum.i128 / accum->count;
+		accum->sum.i128 = avg;
+		*pg_datum = PointerGetDatum(&accum->sum.i128);
+		*pg_isnull = false;
+		break;
+	}
+	case 2101: // PG_PROC_avg_2101: /* avg int4 */
+	case 2102: // PG_PROC_avg_2102: /* avg int2 */
+	{
+		int64_t avg = accum->sum.i64 / accum->count;
+		*pg_datum = Int64GetDatum(avg);
+		*pg_isnull = false;
+		break;
+
+	}
+	case 2103: // PG_PROC_avg_2103: /* avg numeric */
+	{
+		__int128_t avg = accum->sum.i128 / accum->count; // TODO
+		*pg_isnull = false;
+		break;
+	}
+	case 2104: // PG_PROC_avg_2104: /* avg float4 */
+	case 2105: // PG_PROC_avg_2105: /* avg float8 */
+	{
+		double avg = accum->sum.fp64 / accum->count;
+		*pg_datum = Float8GetDatum(avg);
+		*pg_isnull = false;
+		break;
+	}
+	default:
+		elog(ERROR, "aggfn %d is not average operation", aggfn);
+		return 1;
+	}
 	return 0;
 }

@@ -113,31 +113,46 @@ int avg_trans_init(int32_t aggfn, avg_trans_t *pt, const void *p1, xrg_attr_t *a
 	*((T *) PA) += *((T *) PB); \
 }
 	
-void avg_int128(void *transdata, const void *data, xrg_attr_t *attr) {
+/* average operations */
+static void avg_int128(void *transdata, const void *data, xrg_attr_t *attr) {
+
+	avg_trans_t *accum = (avg_trans_t *) transdata;
+	avg_trans_t *rec = (avg_trans_t *) data;
+	accum->count += rec->count;
+	accum->sum.i128 += rec->sum.i128;
+}
+
+static void avg_int64(void *transdata, const void *data, xrg_attr_t *attr) {
+	avg_trans_t *accum = (avg_trans_t *) transdata;
+	avg_trans_t *rec = (avg_trans_t *) data;
+	accum->count += rec->count;
+	accum->sum.i64 += rec->sum.i64;
+}
+
+static void avg_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
 
 }
 
-void avg_int64(void *transdata, const void *data, xrg_attr_t *attr) {
+static void avg_double(void *transdata, const void *data, xrg_attr_t *attr) {
+	avg_trans_t *accum = (avg_trans_t *) transdata;
+	avg_trans_t *rec = (avg_trans_t *) data;
+	accum->count += rec->count;
+	accum->sum.fp64 += rec->sum.fp64;
+}
+
+
+/* sum */
+static void sum_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
 
 }
 
-void avg_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
+/* min */
+static void min_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
 
 }
 
-void avg_double(void *transdata, const void *data, xrg_attr_t *attr) {
-
-}
-
-void sum_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
-
-}
-
-void min_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
-
-}
-
-void max_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
+/* max */
+static void max_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
 
 }
 
