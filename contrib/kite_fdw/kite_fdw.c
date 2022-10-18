@@ -320,10 +320,11 @@ static void fetch_more_data_begin(AsyncRequest *areq);
 static void complete_pending_request(AsyncRequest *areq);
 #endif
 #ifdef KITE_CONNECT
-static HeapTuple
-make_tuple_from_agg(xrg_agg_t *agg,
+static HeapTuple make_tuple_from_agg(xrg_agg_t *agg,
+						   int row,
                                                    Relation rel,
                                                    AttInMetadata *attinmeta,
+						   List *retrieved_attrs,
                                                    ForeignScanState *fsstate,
                                                    MemoryContext temp_context);
 
@@ -2149,14 +2150,20 @@ fetch_more_data(ForeignScanState *node)
 
 		if (fsstate->agg) {
 			int batchsz = 1000;
+
 			xrg_agg_fetch(fsstate->agg, sockstream);
 
 			numrows = 0;
 			fsstate->tuples = (HeapTuple *) palloc0(batchsz *sizeof(HeapTuple));
+			fsstate->num_tuples = batchsz;
+			fsstate->next_tuple = 0;
 			for (i = 0 ; i < batchsz ; i++) {
+				Assert(IsA(node->ss.ps.plan, ForeignScan));
 				fsstate->tuples[i] = make_tuple_from_agg(fsstate->agg, 
+							i,
 							fsstate->rel,
 							fsstate->attinmeta,
+							fsstate->retrieved_attrs,
 							node,
 							fsstate->temp_cxt);
 				if (! fsstate->tuples[i]) {
@@ -2168,9 +2175,6 @@ fetch_more_data(ForeignScanState *node)
 			fsstate->num_tuples = numrows;
 			fsstate->next_tuple = 0;
 			fsstate->eof_reached = (numrows < batchsz);
-
-			// ERIC
-
 
 		} else {
 
@@ -3823,8 +3827,10 @@ complete_pending_request(AsyncRequest *areq)
 #ifdef KITE_CONNECT
 static HeapTuple
 make_tuple_from_agg(xrg_agg_t *agg,
+		int row,
                                                    Relation rel,
                                                    AttInMetadata *attinmeta,
+						   List *retrieved_attrs,
                                                    ForeignScanState *fsstate,
                                                    MemoryContext temp_context)
 {
@@ -3837,7 +3843,6 @@ make_tuple_from_agg(xrg_agg_t *agg,
 	ErrorContextCallback errcallback;
 	MemoryContext oldcontext;
 	ListCell   *lc;
-
 
 	/*
 	 * Do the following work in a temp context that we reset after each tuple.
@@ -3866,6 +3871,7 @@ make_tuple_from_agg(xrg_agg_t *agg,
 	/*
 	 * Set up and install callback to report where conversion error occurs.
 	 */
+#if 0
 	errpos.cur_attno = 0;
 	errpos.rel = rel;
 	errpos.fsstate = fsstate;
@@ -3874,14 +3880,19 @@ make_tuple_from_agg(xrg_agg_t *agg,
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
 
+#endif
+
 	if (xrg_agg_get_next(agg, attinmeta, values, nulls, tupdesc->natts) != 0) {
 		MemoryContextSwitchTo(oldcontext);
 		MemoryContextReset(temp_context);
 		return 0;
 	}
 
+#if 0
 	/* Uninstall error context callback. */
 	error_context_stack = errcallback.previous;
+
+#endif
 
 	/*
 	 * Build the result tuple in caller's memory context.

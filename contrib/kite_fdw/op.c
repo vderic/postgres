@@ -210,6 +210,7 @@ void aggregate(int32_t aggfn, void *transdata, const void *data, xrg_attr_t *att
 		return;
 
 	default:
+		elog(ERROR, "invalid aggfn %d", aggfn);
 		return;
 	}
 }

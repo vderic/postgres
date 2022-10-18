@@ -30,7 +30,7 @@ static int get_ncol_from_aggfnoids(List *aggfnoids) {
 }
 
 
-static int keyeq(void *context, const void *rec1, const void *rec2) {
+static int hagg_keyeq(void *context, const void *rec1, const void *rec2) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	const char *p1, *p2;
 	int itemsz = 0;
@@ -85,7 +85,7 @@ static int keyeq(void *context, const void *rec1, const void *rec2) {
 static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, const char *p1, 
 		xrg_attr_t *attr2, const char *p2, int nattr) {
 
-	void *p = 0;
+	char *p = 0;
 	if (aggfnoid_is_avg(aggfn)) {
 		avg_trans_t *avg = 0;
 		if (nattr != 2) {
@@ -102,14 +102,14 @@ static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, const char *p1,
 			return 0;
 		}
 
-		p =  (void *) malloc(sizeof(attr1->itemsz));
+		p =  (char *) malloc(attr1->itemsz);
 		memcpy(p, p1, attr1->itemsz);
 	}
 
 	return p;
 }
 
-static void *init(void *context, const void *rec) {
+static void *hagg_init(void *context, const void *rec) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	ListCell *lc;
 	const char *p = rec;
@@ -147,7 +147,7 @@ static void *init(void *context, const void *rec) {
 	return translist;
 }
 
-static void *trans(void *context, const void *rec, void *data) {
+static void *hagg_trans(void *context, const void *rec, void *data) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	void **translist = (void  **)data;
 	const char *p = rec;
@@ -301,7 +301,7 @@ static void build_tlist(xrg_agg_t *agg) {
 		return;
 	}
 
-	memset(tlist, 0, sizeof(kite_target_t) * attrlen);
+	memset(tlist, 0, sizeof(kite_target_t) * agg->ntlist);
 
 	foreach (lc, agg->retrieved_attrs) {
 		tlist[i].pgattr = lfirst_int(lc);
@@ -350,10 +350,9 @@ xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_at
 	Assert(aggfnoids);
 	agg->ncol = get_ncol_from_aggfnoids(aggfnoids);
 
-	agg->hagg = hagg_start(agg, 100, ".", keyeq, init, trans);
+	agg->hagg = hagg_start(agg, 100, ".", hagg_keyeq, hagg_init, hagg_trans);
 
-
-	return 0;
+	return agg;
 }
 
 void xrg_agg_destroy(xrg_agg_t *agg) {
@@ -379,6 +378,7 @@ static int xrg_agg_process(xrg_agg_t *agg, kite_result_t *res) {
 	char *buf = 0;
 	int buflen = 0;
 	ListCell *lc;
+	int ret;
 
 	if (res->ncol != agg->ncol) {
 		elog(ERROR, "xrg_agg_process: number of columns returned from kite not match (%d != %d)", 
@@ -389,6 +389,7 @@ static int xrg_agg_process(xrg_agg_t *agg, kite_result_t *res) {
 	while ((iter = kite_result_next(res)) != 0) {
 		int len = 0;
 		uint64_t hval = 0; // hash value of the groupby keys
+
 
 		if (! agg->attr) {
 			agg->attr = (xrg_attr_t *) malloc(sizeof(xrg_attr_t) * iter->nitem);
@@ -410,13 +411,11 @@ static int xrg_agg_process(xrg_agg_t *agg, kite_result_t *res) {
 		}
 
 		len = serialize(iter, &buf, &buflen);
-		hagg_feed(agg->hagg, hval, buf, len);
+		ret = hagg_feed(agg->hagg, hval, buf, len);
 
 	}
 
-	xrg_iter_release(iter);
-
-	if (buf) pfree(buf);
+	if (buf) free(buf);
 
 	return 0;
 }
@@ -443,12 +442,14 @@ int xrg_agg_get_next(xrg_agg_t *agg, AttInMetadata *attinmeta, Datum *datums, bo
 
 	const void *rec = 0;
 	void *data = 0;
+	int ret = 0;
+
 
 	// obtain and process the batch
 	if (! agg->agg_iter.tab) {
 		int max = hagg_batch_max(agg->hagg);
 		if (agg->batchid < max) {
-			hagg_process_batch(agg->hagg, agg->batchid, &agg->agg_iter);
+			ret = hagg_process_batch(agg->hagg, agg->batchid, &agg->agg_iter);
 			agg->batchid++;
 		} else {
 			// no more rows
@@ -456,13 +457,13 @@ int xrg_agg_get_next(xrg_agg_t *agg, AttInMetadata *attinmeta, Datum *datums, bo
 		}
 	}
 
-	hagg_next(&agg->agg_iter, &rec, &data);
+	ret = hagg_next(&agg->agg_iter, &rec, &data);
 	if (rec == 0) {
 		// End of Batch and try process next batch
 		int max = hagg_batch_max(agg->hagg);
 		memset(&agg->agg_iter, 0, sizeof(hagg_iter_t));
 		if (agg->batchid < max) {
-			hagg_process_batch(agg->hagg, agg->batchid, &agg->agg_iter);
+			ret = hagg_process_batch(agg->hagg, agg->batchid, &agg->agg_iter);
 			agg->batchid++;
 		} else {
 			// no more rows
@@ -471,7 +472,7 @@ int xrg_agg_get_next(xrg_agg_t *agg, AttInMetadata *attinmeta, Datum *datums, bo
 
 		hagg_next(&agg->agg_iter, &rec, &data);
 		if (rec == 0) {
-			elog(ERROR, "hagg_next: no record found");
+			return 1;
 		}
 	}
 	
