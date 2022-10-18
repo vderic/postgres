@@ -7,7 +7,7 @@ ARROWZIP = apache-arrow-7.0.0-static.zip
 ARROWDIR = $(ARROWZIP:.zip=)
 SOCKSTREAMTAR = sockstream-r220819.zip
 SOCKSTREAMDIR = $(SOCKSTREAMTAR:.zip=)
-HOPZIP = hop-r221014.zip
+HOPZIP = hop-r221018.zip
 HOPDIR = $(HOPZIP:.zip=)
 
 all: $(SUBDIR) include/xrg.h include/arrow/api.h include/sockstream.h include/rapidjson include/hop/hashagg.h
@@ -49,4 +49,4 @@ include/rapidjson: tarball/rapidjson-master.zip
 
 
 wipe:
-	rm -rf bin include lib share $(XRGDIR) $(JSONDIR) $(ARROWDIR) $(SOCKSTREAMDIR)
+	rm -rf bin include lib share $(XRGDIR) $(JSONDIR) $(ARROWDIR) $(SOCKSTREAMDIR) $(HOPDIR)
