@@ -37,7 +37,8 @@ struct xrg_agg_t {
 };
 
 xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_attrs);
-int xrg_agg_get_next(xrg_agg_t *agg, sockstream_t *ss, AttInMetadata *attinmeta, Datum *datums, bool *flag, int n);
+int xrg_agg_fetch(xrg_agg_t *agg, sockstream_t *ss);
+int xrg_agg_get_next(xrg_agg_t *agg, AttInMetadata *attinmeta, Datum *datums, bool *flag, int n);
 
 void xrg_agg_destroy(xrg_agg_t *agg);
 

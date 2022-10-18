@@ -170,9 +170,9 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, int atttypmod
 	switch (aggfn) {
 	case 2100: // PG_PROC_avg_2100: /* avg int8 */
 	{
-		__int128_t avg = accum->sum.i128 / accum->count;
-		accum->sum.i128 = avg;
-		*pg_datum = PointerGetDatum(&accum->sum.i128);
+		__int128_t *ret = (__int128_t *) palloc(sizeof(__int128_t)); // create buffer by palloc and let postgres handle the memory
+		*ret = accum->sum.i128 / accum->count;
+		*pg_datum = PointerGetDatum(ret);
 		*pg_isnull = false;
 		break;
 	}
@@ -187,7 +187,8 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, int atttypmod
 	}
 	case 2103: // PG_PROC_avg_2103: /* avg numeric */
 	{
-		__int128_t avg = accum->sum.i128 / accum->count; // TODO
+		__int128_t *ret = (__int128_t *) palloc(sizeof(__int128_t));
+		*ret = accum->sum.i128 / accum->count; // TODO
 		*pg_isnull = false;
 		break;
 	}

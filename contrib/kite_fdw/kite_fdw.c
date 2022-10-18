@@ -57,6 +57,7 @@
 #include "json.h"
 #include "kite_client.h"
 #include "decode.h"
+#include "agg.h"
 
 PG_MODULE_MAGIC;
 
@@ -118,6 +119,7 @@ typedef struct PgFdwScanState
 
 	/* for remote query execution */
 #ifdef KITE_CONNECT
+	xrg_agg_t *agg; /* xrg_agg_t for aggregate */
 	sockstream_t *sockstream;       /* kite connectino for the scan */
 #else
 	PGconn	   *conn;			/* connection for the scan */
@@ -318,6 +320,13 @@ static void fetch_more_data_begin(AsyncRequest *areq);
 static void complete_pending_request(AsyncRequest *areq);
 #endif
 #ifdef KITE_CONNECT
+static HeapTuple
+make_tuple_from_agg(xrg_agg_t *agg,
+                                                   Relation rel,
+                                                   AttInMetadata *attinmeta,
+                                                   ForeignScanState *fsstate,
+                                                   MemoryContext temp_context);
+
 static HeapTuple make_tuple_from_result_row(kite_result_t *res,
 											int row,
 											Relation rel,
@@ -1098,6 +1107,18 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 
 	/* Set the async-capable flag */
 	fsstate->async_capable = node->ss.ps.async_capable;
+
+
+	/*
+	 * Prepare xrg_agg
+	 */
+	if (fsstate->retrieved_aggfnoids) {
+		fsstate->agg = xrg_agg_init(fsstate->retrieved_attrs,
+							fsstate->retrieved_aggfnoids,
+							fsstate->retrieved_groupby_attrs);
+	} else {
+		fsstate->agg = NULL;
+	}
 }
 
 /*
@@ -1244,6 +1265,10 @@ postgresEndForeignScan(ForeignScanState *node)
 	ReleaseConnection(fsstate->sockstream);
 	fsstate->sockstream = NULL;
 
+	if (fsstate->agg) {
+		xrg_agg_destroy(fsstate->agg);
+		fsstate->agg = 0;
+	}
 #else
 	/* Close the cursor if open, to prevent accumulation of cursors */
 	if (fsstate->cursor_exists)
@@ -2122,6 +2147,32 @@ fetch_more_data(ForeignScanState *node)
 		int numrows;
 		int i;
 
+		if (fsstate->agg) {
+			int batchsz = 1000;
+			xrg_agg_fetch(fsstate->agg, sockstream);
+
+			numrows = 0;
+			fsstate->tuples = (HeapTuple *) palloc0(batchsz *sizeof(HeapTuple));
+			for (i = 0 ; i < batchsz ; i++) {
+				fsstate->tuples[i] = make_tuple_from_agg(fsstate->agg, 
+							fsstate->rel,
+							fsstate->attinmeta,
+							node,
+							fsstate->temp_cxt);
+				if (! fsstate->tuples[i]) {
+					break;
+				}
+				numrows++;
+			}
+
+			fsstate->num_tuples = numrows;
+			fsstate->next_tuple = 0;
+			fsstate->eof_reached = (numrows < batchsz);
+
+			// ERIC
+
+
+		} else {
 
 		res = kite_get_result(sockstream);
 		if (! res) {
@@ -2156,6 +2207,8 @@ fetch_more_data(ForeignScanState *node)
 
                 /* Must be EOF if we didn't get as many tuples as we asked for. */
                 fsstate->eof_reached = (numrows == 0);
+
+		}
         }
         PG_FINALLY();
         {
@@ -3768,6 +3821,102 @@ complete_pending_request(AsyncRequest *areq)
  * context such as ANALYZE, or if we're processing a non-scan query node.
  */
 #ifdef KITE_CONNECT
+static HeapTuple
+make_tuple_from_agg(xrg_agg_t *agg,
+                                                   Relation rel,
+                                                   AttInMetadata *attinmeta,
+                                                   ForeignScanState *fsstate,
+                                                   MemoryContext temp_context)
+{
+	HeapTuple	tuple;
+	TupleDesc	tupdesc;
+	Datum	   *values;
+	bool	   *nulls;
+	ItemPointer ctid = NULL;
+	ConversionLocation errpos;
+	ErrorContextCallback errcallback;
+	MemoryContext oldcontext;
+	ListCell   *lc;
+
+
+	/*
+	 * Do the following work in a temp context that we reset after each tuple.
+	 * This cleans up not only the data we have direct access to, but any
+	 * cruft the I/O functions might leak.
+	 */
+	oldcontext = MemoryContextSwitchTo(temp_context);
+
+	/*
+	 * Get the tuple descriptor for the row.  Use the rel's tupdesc if rel is
+	 * provided, otherwise look to the scan node's ScanTupleSlot.
+	 */
+	if (rel)
+		tupdesc = RelationGetDescr(rel);
+	else
+	{
+		Assert(fsstate);
+		tupdesc = fsstate->ss.ss_ScanTupleSlot->tts_tupleDescriptor;
+	}
+
+	values = (Datum *) palloc0(tupdesc->natts * sizeof(Datum));
+	nulls = (bool *) palloc(tupdesc->natts * sizeof(bool));
+	/* Initialize to nulls for any columns not present in result */
+	memset(nulls, true, tupdesc->natts * sizeof(bool));
+
+	/*
+	 * Set up and install callback to report where conversion error occurs.
+	 */
+	errpos.cur_attno = 0;
+	errpos.rel = rel;
+	errpos.fsstate = fsstate;
+	errcallback.callback = conversion_error_callback;
+	errcallback.arg = (void *) &errpos;
+	errcallback.previous = error_context_stack;
+	error_context_stack = &errcallback;
+
+	if (xrg_agg_get_next(agg, attinmeta, values, nulls, tupdesc->natts) != 0) {
+		MemoryContextReset(temp_context);
+		return 0;
+	}
+
+	/* Uninstall error context callback. */
+	error_context_stack = errcallback.previous;
+
+	/*
+	 * Build the result tuple in caller's memory context.
+	 */
+	MemoryContextSwitchTo(oldcontext);
+
+	tuple = heap_form_tuple(tupdesc, values, nulls);
+
+	/*
+	 * If we have a CTID to return, install it in both t_self and t_ctid.
+	 * t_self is the normal place, but if the tuple is converted to a
+	 * composite Datum, t_self will be lost; setting t_ctid allows CTID to be
+	 * preserved during EvalPlanQual re-evaluations (see ROW_MARK_COPY code).
+	 */
+	if (ctid)
+		tuple->t_self = tuple->t_data->t_ctid = *ctid;
+
+	/*
+	 * Stomp on the xmin, xmax, and cmin fields from the tuple created by
+	 * heap_form_tuple.  heap_form_tuple actually creates the tuple with
+	 * DatumTupleFields, not HeapTupleFields, but the executor expects
+	 * HeapTupleFields and will happily extract system columns on that
+	 * assumption.  If we don't do this then, for example, the tuple length
+	 * ends up in the xmin field, which isn't what we want.
+	 */
+	HeapTupleHeaderSetXmax(tuple->t_data, InvalidTransactionId);
+	HeapTupleHeaderSetXmin(tuple->t_data, InvalidTransactionId);
+	HeapTupleHeaderSetCmin(tuple->t_data, InvalidTransactionId);
+
+	/* Clean up */
+	MemoryContextReset(temp_context);
+
+	return tuple;
+}
+
+
 static HeapTuple
 make_tuple_from_result_row(kite_result_t *res,
                                                    int row,

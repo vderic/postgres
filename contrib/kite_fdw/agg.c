@@ -92,7 +92,7 @@ static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, const char *p1,
 			elog(ERROR, "avg need 2 attributes sum and count");
 			return 0;
 		}
-		avg = (avg_trans_t *) palloc(sizeof(avg_trans_t));
+		avg = (avg_trans_t *) malloc(sizeof(avg_trans_t));
 		avg_trans_init(aggfn, avg, p1, attr1, p2, attr2);
 		p = (void *) avg;
 
@@ -102,7 +102,7 @@ static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, const char *p1,
 			return 0;
 		}
 
-		p =  (void *) palloc(sizeof(attr1->itemsz));
+		p =  (void *) malloc(sizeof(attr1->itemsz));
 		memcpy(p, p1, attr1->itemsz);
 	}
 
@@ -114,7 +114,7 @@ static void *init(void *context, const void *rec) {
 	ListCell *lc;
 	const char *p = rec;
 	int naggfnoid = list_length(agg->aggfnoids);
-	void ** translist = (void **) palloc(sizeof(void*) * naggfnoid);
+	void ** translist = (void **) malloc(sizeof(void*) * naggfnoid);
 
 	int i = 0;
 	xrg_attr_t *attr = agg->attr;
@@ -226,6 +226,15 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 			p = column_next(attr++, p);
 		}
 	}
+
+	if (translist) {
+		for (int i = 0 ; i < agg->ntlist ; i++) {
+			if (translist[i]) {
+				free(translist[i]);
+			}
+		}
+		free(translist);
+	}
 }
 
 static int get_serialize_size(xrg_iter_t *iter) {
@@ -246,13 +255,13 @@ static int serialize(xrg_iter_t *iter, char **buf, int *buflen) {
 	char *p = 0;
 	int sz = get_serialize_size(iter);
 	if (!*buf) {
-		*buf = (char *) palloc(sz);
+		*buf = (char *) malloc(sz);
 		*buflen = sz;
 	}
 
 	if (*buf && sz > *buflen) {
 		int newsz = sz * 2;
-		*buf = (char *) repalloc(*buf, newsz);
+		*buf = (char *) realloc(*buf, newsz);
 		*buflen = newsz;
 	}
 
@@ -286,7 +295,7 @@ static void build_tlist(xrg_agg_t *agg) {
 	}
 	agg->ntlist = aggfnlen;
 
-	tlist = (kite_target_t*) palloc(sizeof(kite_target_t) * agg->ntlist);
+	tlist = (kite_target_t*) malloc(sizeof(kite_target_t) * agg->ntlist);
 	if (!tlist) {
 		elog(ERROR, "out of memory");
 		return;
@@ -325,7 +334,7 @@ static void build_tlist(xrg_agg_t *agg) {
 
 xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_attrs) {
 
-	xrg_agg_t *agg = (xrg_agg_t*) palloc(sizeof(xrg_agg_t));
+	xrg_agg_t *agg = (xrg_agg_t*) malloc(sizeof(xrg_agg_t));
 	Assert(agg);
 
 	agg->reached_eof = false;
@@ -352,7 +361,14 @@ void xrg_agg_destroy(xrg_agg_t *agg) {
 		if (agg->hagg) {
 			hagg_release(agg->hagg);
 		}
+		if (agg->attr) {
+			free(agg->attr);
+		}
+		if (agg->tlist) {
+			free(agg->tlist);
+		}
 
+		free(agg);
 	}
 }
 
@@ -375,7 +391,7 @@ static int xrg_agg_process(xrg_agg_t *agg, kite_result_t *res) {
 		uint64_t hval = 0; // hash value of the groupby keys
 
 		if (! agg->attr) {
-			agg->attr = (xrg_attr_t *) palloc(sizeof(xrg_attr_t) * iter->nitem);
+			agg->attr = (xrg_attr_t *) malloc(sizeof(xrg_attr_t) * iter->nitem);
 			//agg->ncol = iter->nitem;
 			memcpy(agg->attr, iter->attr, sizeof(xrg_attr_t) * iter->nitem);
 		}
@@ -405,23 +421,28 @@ static int xrg_agg_process(xrg_agg_t *agg, kite_result_t *res) {
 	return 0;
 }
 
-int xrg_agg_get_next(xrg_agg_t *agg, sockstream_t *ss, AttInMetadata *attinmeta, Datum *datums, bool *flags, int n) {
-
-	const void *rec = 0;
-	void *data = 0;
-
+int xrg_agg_fetch(xrg_agg_t *agg, sockstream_t *ss) {
 	// get all data from socket
-
 	if (! agg->reached_eof)  {
 		kite_result_t *res = 0;
 		while ((res = kite_get_result(ss)) != 0) {
 			xrg_agg_process(agg, res);
 	
 			kite_result_destroy(res);
+			res = 0;
 		}
 
 		agg->reached_eof = true;
 	}
+	return 0;
+}
+
+
+
+int xrg_agg_get_next(xrg_agg_t *agg, AttInMetadata *attinmeta, Datum *datums, bool *flags, int n) {
+
+	const void *rec = 0;
+	void *data = 0;
 
 	// obtain and process the batch
 	if (! agg->agg_iter.tab) {
