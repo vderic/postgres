@@ -6,6 +6,8 @@
 #include "utils/numeric.h"
 #include "utils/fmgrprotos.h"
 
+#define POSTGRES_SUM_NUMERIC 1
+
 static inline Datum decode_int16(char *data) {
 	int16_t *p = (int16_t *)data;
 	return Int16GetDatum(*p);
@@ -84,7 +86,23 @@ int var_decode(char *data, char flag, xrg_attr_t *attr, int atttypmod, Datum *pg
 			*pg_datum = decode_int64(data);
 		} break;
 		case XRG_PTYP_INT128: {
+		        // postgres needs numeric but gpdb needs int128
+#ifdef POSTGRES_SUM_NUMERIC
+                	FmgrInfo flinfo;
+                	__int128_t v = *((__int128_t *)data);
+                	char dst[MAX_DEC128_STRLEN];
+			precision = 38;
+			scale = 0;
+                	decimal128_to_string(v, precision, scale, dst, sizeof(dst));
+                	memset(&flinfo, 0, sizeof(FmgrInfo));
+                	flinfo.fn_addr = numeric_in;
+                	flinfo.fn_nargs = 3;
+                	flinfo.fn_strict = true;
+                	*pg_datum = InputFunctionCall(&flinfo, dst, 0, atttypmod);
+#else
 			*pg_datum = decode_int128(data);
+
+#endif
 		} break;
 		case XRG_PTYP_FP32: {
 			*pg_datum = decode_float(data);
