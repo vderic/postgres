@@ -188,9 +188,17 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, int atttypmod
 	switch (aggfn) {
 	case 2100: // PG_PROC_avg_2100: /* avg int8 */
 	{
-		__int128_t *ret = (__int128_t *) palloc(sizeof(__int128_t)); // create buffer by palloc and let postgres handle the memory
-		*ret = accum->sum.i128 / accum->count;
-		*pg_datum = PointerGetDatum(ret);
+		FmgrInfo flinfo;
+		__int128_t v = accum->sum.i128 / accum->count;
+		char dst[MAX_DEC128_STRLEN];
+		int precision = 38;
+		int scale = 0;
+		decimal128_to_string(v, precision, scale, dst, sizeof(dst));
+		memset(&flinfo, 0, sizeof(FmgrInfo));
+		flinfo.fn_addr = numeric_in;
+		flinfo.fn_nargs = 3;
+		flinfo.fn_strict = true;
+		*pg_datum = InputFunctionCall(&flinfo, dst, 0, atttypmod);
 		*pg_isnull = false;
 		break;
 	}
