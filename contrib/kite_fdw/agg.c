@@ -452,46 +452,32 @@ int xrg_agg_fetch(xrg_agg_t *agg, sockstream_t *ss) {
 }
 
 
-
 int xrg_agg_get_next(xrg_agg_t *agg, AttInMetadata *attinmeta, Datum *datums, bool *flags, int n) {
 
 	const void *rec = 0;
 	void *data = 0;
+	int max = hagg_batch_max(agg->hagg);
 
 	// obtain and process the batch
-	if (! agg->agg_iter.tab) {
-		int max = hagg_batch_max(agg->hagg);
-		if (agg->batchid < max) {
+	while (agg->batchid < max) {
+		if (! agg->agg_iter.tab) {
 			hagg_process_batch(agg->hagg, agg->batchid, &agg->agg_iter);
-			agg->batchid++;
-		} else {
-			// no more rows
-			return 1;
 		}
-	}
-
-	hagg_next(&agg->agg_iter, &rec, &data);
-	if (rec == 0) {
-		// End of Batch and try process next batch
-		int max = hagg_batch_max(agg->hagg);
-		memset(&agg->agg_iter, 0, sizeof(hagg_iter_t));
-		if (agg->batchid < max) {
-			hagg_process_batch(agg->hagg, agg->batchid, &agg->agg_iter);
-			agg->batchid++;
-		} else {
-			// no more rows
-			return 1;
-		}
-
+	
 		hagg_next(&agg->agg_iter, &rec, &data);
 		if (rec == 0) {
-			return 1;
+			memset(&agg->agg_iter, 0, sizeof(hagg_iter_t));
+			agg->batchid++;
+			continue;
 		}
-	}
 	
-	finalize(agg, rec, data, attinmeta, datums, flags, n);
+		finalize(agg, rec, data, attinmeta, datums, flags, n);
+		return 0;
 
-	return 0;
+	}
+
+	return 1;
+
 }
 
 

@@ -3879,7 +3879,6 @@ make_tuple_from_agg(xrg_agg_t *agg,
 	errcallback.arg = (void *) &errpos;
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
-
 #endif
 
 	if (xrg_agg_get_next(agg, attinmeta, values, nulls, tupdesc->natts) != 0) {
