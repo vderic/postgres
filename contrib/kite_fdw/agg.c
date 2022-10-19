@@ -170,10 +170,7 @@ static void *hagg_trans(void *context, const void *rec, void *data) {
 			p = column_next(attr, p);
 			attr++;
 			continue;
-		}
-
-
-		if (nkiteattr == 2) {
+		} else if (nkiteattr == 2) {
 			avg_trans_t pt;
 			const char *p1 = p;
 			xrg_attr_t *attr1 = attr++;
@@ -188,6 +185,9 @@ static void *hagg_trans(void *context, const void *rec, void *data) {
 
 			aggregate(aggfn, transdata, &pt, attr1);
 			continue;
+		} else {
+			elog(ERROR, "hagg_trans: aggregate functions won't have more than 2 columns");
+			return 0;
 		}
 	}
 
@@ -195,7 +195,7 @@ static void *hagg_trans(void *context, const void *rec, void *data) {
 }
 
 static void finalize(void *context, const void *rec, void *data, AttInMetadata *attinmeta,
-	       	Datum *datums, bool *flags, int ndatum) {
+       	Datum *datums, bool *flags, int ndatum) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	void **translist = (void  **)data;
 	const char *p = rec;
@@ -386,7 +386,7 @@ static int xrg_agg_process(xrg_agg_t *agg, kite_result_t *res) {
 	char *buf = 0;
 	int buflen = 0;
 	ListCell *lc;
-	int ret;
+	int ret = 0;
 
 	if (res->ncol != agg->ncol) {
 		elog(ERROR, "xrg_agg_process: number of columns returned from kite not match (%d != %d)", 
@@ -420,20 +420,27 @@ static int xrg_agg_process(xrg_agg_t *agg, kite_result_t *res) {
 
 		len = serialize(iter, &buf, &buflen);
 		ret = hagg_feed(agg->hagg, hval, buf, len);
+		if (ret) {
+			elog(LOG, "hagg_feed failed. ret = %d", ret);
+			break;
+		}
 
 	}
 
 	if (buf) free(buf);
 
-	return 0;
+	return ret;
 }
 
 int xrg_agg_fetch(xrg_agg_t *agg, sockstream_t *ss) {
+	int ret = 0;
 	// get all data from socket
 	if (! agg->reached_eof)  {
 		kite_result_t *res = 0;
 		while ((res = kite_get_result(ss)) != 0) {
-			xrg_agg_process(agg, res);
+			if ((ret = xrg_agg_process(agg, res)) != 0) {
+				return ret;
+			}
 	
 			kite_result_destroy(res);
 			res = 0;
@@ -450,13 +457,12 @@ int xrg_agg_get_next(xrg_agg_t *agg, AttInMetadata *attinmeta, Datum *datums, bo
 
 	const void *rec = 0;
 	void *data = 0;
-	int ret = 0;
 
 	// obtain and process the batch
 	if (! agg->agg_iter.tab) {
 		int max = hagg_batch_max(agg->hagg);
 		if (agg->batchid < max) {
-			ret = hagg_process_batch(agg->hagg, agg->batchid, &agg->agg_iter);
+			hagg_process_batch(agg->hagg, agg->batchid, &agg->agg_iter);
 			agg->batchid++;
 		} else {
 			// no more rows
@@ -464,13 +470,13 @@ int xrg_agg_get_next(xrg_agg_t *agg, AttInMetadata *attinmeta, Datum *datums, bo
 		}
 	}
 
-	ret = hagg_next(&agg->agg_iter, &rec, &data);
+	hagg_next(&agg->agg_iter, &rec, &data);
 	if (rec == 0) {
 		// End of Batch and try process next batch
 		int max = hagg_batch_max(agg->hagg);
 		memset(&agg->agg_iter, 0, sizeof(hagg_iter_t));
 		if (agg->batchid < max) {
-			ret = hagg_process_batch(agg->hagg, agg->batchid, &agg->agg_iter);
+			hagg_process_batch(agg->hagg, agg->batchid, &agg->agg_iter);
 			agg->batchid++;
 		} else {
 			// no more rows
