@@ -223,8 +223,11 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 				attr++;
 			}
 		} else {
-			var_decode((char *) p, 0, attr, attinmeta->atttypmods[k-1], &datums[k-1], &flags[k-1]);
+			// MUST advance the next pointer first because bytea size header will be altered to match postgres
+			const char *p1 = p;
+			xrg_attr_t *attr1 = attr;
 			p = column_next(attr++, p);
+			var_decode((char *) p1, 0, attr1, attinmeta->atttypmods[k-1], &datums[k-1], &flags[k-1]);
 		}
 	}
 
@@ -449,7 +452,6 @@ int xrg_agg_get_next(xrg_agg_t *agg, AttInMetadata *attinmeta, Datum *datums, bo
 	void *data = 0;
 	int ret = 0;
 
-
 	// obtain and process the batch
 	if (! agg->agg_iter.tab) {
 		int max = hagg_batch_max(agg->hagg);
@@ -482,7 +484,6 @@ int xrg_agg_get_next(xrg_agg_t *agg, AttInMetadata *attinmeta, Datum *datums, bo
 	}
 	
 	finalize(agg, rec, data, attinmeta, datums, flags, n);
-
 
 	return 0;
 }
