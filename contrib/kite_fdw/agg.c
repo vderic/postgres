@@ -1,3 +1,4 @@
+#include <limits.h>
 #include "agg.h"
 #include "decode.h"
 #include "hop/komihash.h"
@@ -358,7 +359,7 @@ xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_at
 	Assert(aggfnoids);
 	agg->ncol = get_ncol_from_aggfnoids(aggfnoids);
 
-	agg->hagg = hagg_start(agg, 100, ".", hagg_keyeq, hagg_init, hagg_trans);
+	agg->hagg = hagg_start(agg, LLONG_MAX, ".", hagg_keyeq, hagg_init, hagg_trans);
 
 	return agg;
 }
