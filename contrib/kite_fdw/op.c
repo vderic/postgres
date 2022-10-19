@@ -4,6 +4,7 @@ int avg_trans_init(int32_t aggfn, avg_trans_t *pt, const void *p1, xrg_attr_t *a
                 const void *p2, xrg_attr_t *attr2) {
 
 	if (attr2->ptyp != XRG_PTYP_INT64) {
+		elog(LOG, "avg_trans_init: attr2 type not INT64 %d", attr2->ptyp);
 		return 1;
 	}
 	pt->count = *((int64_t*) p2);
@@ -19,6 +20,7 @@ int avg_trans_init(int32_t aggfn, avg_trans_t *pt, const void *p1, xrg_attr_t *a
 		pt->sum.fp64 = *((double *) p1);
 		break;
 	default:
+		elog(LOG, "avg_trans_init: attr1 type not support %d", attr1->ptyp);
 		return 1;
 	}
 

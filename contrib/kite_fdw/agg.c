@@ -178,7 +178,7 @@ static void *hagg_trans(void *context, const void *rec, void *data) {
 			xrg_attr_t *attr2 = attr++;
 			p = column_next(attr2, p2);
 
-			if (avg_trans_init(aggfn, &pt, p1, attr1, p2, attr1) != 0) {
+			if (avg_trans_init(aggfn, &pt, p1, attr1, p2, attr2) != 0) {
 				elog(ERROR, "avg_trans_init failed");
 				return 0;
 			}
