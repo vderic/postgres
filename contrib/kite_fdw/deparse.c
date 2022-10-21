@@ -3194,7 +3194,7 @@ deparseOpExpr(OpExpr *node, deparse_expr_cxt *context)
 		}
 
 		if (canSuppressLeftConstCast)
-			deparseConst((Const *) left, context, -2);
+			deparseConst((Const *) left, context, -1);
 		else
 			deparseExpr(left, context);
 
@@ -3208,7 +3208,7 @@ deparseOpExpr(OpExpr *node, deparse_expr_cxt *context)
 	appendStringInfoChar(buf, ' ');
 
 	if (canSuppressRightConstCast)
-		deparseConst((Const *) right, context, -2);
+		deparseConst((Const *) right, context, -1);
 	else
 		deparseExpr(right, context);
 
