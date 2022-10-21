@@ -88,6 +88,7 @@ int avg_numeric_finalize(char *data, xrg_attr_t *attr, __int128_t *avg, int *pre
 		*scale = s3;
 
 	} catch (const std::runtime_error &ex) {
+		std::cerr << ex.what() << std::endl;
 		return 1;
 	} catch (...) {
 		return 2;

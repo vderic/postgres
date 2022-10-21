@@ -217,7 +217,9 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, int atttypmod
 		char dst[MAX_DEC128_STRLEN];
 		int precision, scale;
 		__int128_t v = 0;
-		avg_numeric_finalize(data, attr, &v, &precision, &scale);
+		if (avg_numeric_finalize(data, attr, &v, &precision, &scale) != 0) {
+			elog(ERROR, "avg_numeric_finalize error");
+		}
 		decimal128_to_string(v, precision, scale, dst, sizeof(dst));
 		memset(&flinfo, 0, sizeof(FmgrInfo));
 		flinfo.fn_addr = numeric_in;
