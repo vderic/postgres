@@ -213,9 +213,19 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, int atttypmod
 	}
 	case 2103: // PG_PROC_avg_2103: /* avg numeric */
 	{
-		__int128_t *ret = (__int128_t *) palloc(sizeof(__int128_t));
-		*ret = accum->sum.i128 / accum->count; // TODO
+		FmgrInfo flinfo;
+		char dst[MAX_DEC128_STRLEN];
+		int precision, scale;
+		__int128_t v = 0;
+		avg_numeric_finalize(data, attr, &v, &precision, &scale);
+		decimal128_to_string(v, precision, scale, dst, sizeof(dst));
+		memset(&flinfo, 0, sizeof(FmgrInfo));
+		flinfo.fn_addr = numeric_in;
+		flinfo.fn_nargs = 3;
+		flinfo.fn_strict = true;
+		*pg_datum = InputFunctionCall(&flinfo, dst, 0, atttypmod);
 		*pg_isnull = false;
+
 		break;
 	}
 	case 2104: // PG_PROC_avg_2104: /* avg float4 */

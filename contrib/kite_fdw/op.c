@@ -1,4 +1,5 @@
 #include "agg.h"
+#include "numeric.hpp"
 
 int avg_trans_init(int32_t aggfn, avg_trans_t *pt, const void *p1, xrg_attr_t *attr1,
                 const void *p2, xrg_attr_t *attr2) {
@@ -68,10 +69,6 @@ static void avg_int64(void *transdata, const void *data, xrg_attr_t *attr) {
 	accum->sum.i64 += rec->sum.i64;
 }
 
-static void avg_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
-
-}
-
 static void avg_double(void *transdata, const void *data, xrg_attr_t *attr) {
 	avg_trans_t *accum = (avg_trans_t *) transdata;
 	avg_trans_t *rec = (avg_trans_t *) data;
@@ -79,21 +76,6 @@ static void avg_double(void *transdata, const void *data, xrg_attr_t *attr) {
 	accum->sum.fp64 += rec->sum.fp64;
 }
 
-
-/* sum */
-static void sum_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
-
-}
-
-/* min */
-static void min_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
-
-}
-
-/* max */
-static void max_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
-
-}
 
 void aggregate(int32_t aggfn, void *transdata, const void *data, xrg_attr_t *attr) {
 

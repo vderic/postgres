@@ -5,7 +5,6 @@
 #include "nodes/pg_list.h"
 #include "xrg.h"
 #include "hop/hashagg.h"
-#include "hop/spill.h"
 #include "kite_client.h"
 
 typedef struct kite_target_t kite_target_t;
