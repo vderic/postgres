@@ -1,9 +1,6 @@
 #include "json.h"
 #include "access/tupdesc.h"
 #include "catalog/pg_attribute.h"
-#include "rapidjson/document.h"
-#include "rapidjson/prettywriter.h"
-#include "rapidjson/stringbuffer.h"
 #include "catalog/pg_type_d.h"
 
 const char *xrg_typ_str(int16_t ptyp, int16_t ltyp) {
@@ -255,13 +252,8 @@ void pg_typ_to_xrg_typ(Oid t, int32_t typmod, int16_t &ptyp, int16_t &ltyp, int1
 }
 
 
-/* json helper */
-static void kite_json_schema_from_pg(rapidjson::Document &doc, TupleDesc tupdesc) {
-	auto &alloc = doc.GetAllocator();
-	
+void kite_build_schema(StringInfo schema, TupleDesc tupdesc) {
 	int i;
-
-	rapidjson::Value array(rapidjson::kArrayType);
 
 	for (i = 1 ; i <= tupdesc->natts ; i++) {
 		int16_t ptyp, ltyp, precision, scale;
@@ -270,76 +262,16 @@ static void kite_json_schema_from_pg(rapidjson::Document &doc, TupleDesc tupdesc
 
 		Form_pg_attribute attr = TupleDescAttr(tupdesc, i - 1);
 
-		elog(LOG, "SCAN col[%d]: name = %s, typid = %d, typmod = %d", i, NameStr(attr->attname), attr->atttypid, attr->atttypmod);
-
 		pg_typ_to_xrg_typ(attr->atttypid, attr->atttypmod, ptyp, ltyp, precision, scale, is_array);
-
-                elog(LOG, "schema: typ=%d, typmod=%d, ptyp =%d, ltyp=%d, precision =%d, scale=%d, is_array = %d",
-                                attr->atttypid, attr->atttypmod, ptyp, ltyp, precision, scale, is_array);
-
-		rapidjson::Value obj(rapidjson::kObjectType);
-
-		// name, type, precision, scale
-		rapidjson::Value value(rapidjson::kObjectType);
-
-		// name
 		char *colname = NameStr(attr->attname);
-		value.SetString(colname, static_cast<rapidjson::SizeType>(strlen(colname)), alloc);
-		obj.AddMember("name", value, alloc);
-
-
-		// type
 		const char *type = xrg_typ_str(ptyp, ltyp);
-		value.SetString(type, static_cast<rapidjson::SizeType>(strlen(type)), alloc);
-		obj.AddMember("type", value, alloc);
 
 		if (strcmp(type, "decimal") == 0) {
-			value.SetInt(precision);
-			obj.AddMember("precision", value, alloc);
-			value.SetInt(scale);
-			obj.AddMember("scale", value, alloc);
+			appendStringInfo(schema, "%s:%s:%d:%d\n", colname, type, precision, scale);
+
+		} else {
+			appendStringInfo(schema, "%s:%s\n", colname, type);
 		}
-
-		array.PushBack(obj, alloc);
 	}
-
-	doc.AddMember("schema", array, alloc);
-
-}
-
-static void kite_json_add_sql(rapidjson::Document &doc, char *sql) {
-	auto &alloc = doc.GetAllocator();
-
-	rapidjson::Value obj(rapidjson::kObjectType);
-	obj.SetString(sql, static_cast<rapidjson::SizeType>(strlen(sql)), alloc);
-	doc.AddMember("sql", obj, alloc);
-}
-
-
-static void kite_json_add_fragment(rapidjson::Document &doc, int curr, int nfrag) {
-	auto &alloc = doc.GetAllocator();
-
-	rapidjson::Value arr(rapidjson::kArrayType);
-	rapidjson::Value fno, fcnt;
-	fno.SetInt(curr);
-	fcnt.SetInt(nfrag);
-	arr.PushBack(fno, alloc);
-	arr.PushBack(fcnt, alloc);
-	doc.AddMember("fragment", arr, alloc);
-}
-
-char *kite_build_json(char *sql, TupleDesc tupdesc, int curfrag, int nfrag) {
-	rapidjson::Document doc;
-	doc.SetObject();
-
-	kite_json_schema_from_pg(doc, tupdesc);
-	kite_json_add_sql(doc, sql);
-	kite_json_add_fragment(doc, curfrag, nfrag);
-
-	rapidjson::StringBuffer buffer;
-	rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
-	doc.Accept(writer);
-	const char *json = buffer.GetString();
-	return strdup(json);
 }
 

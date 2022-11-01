@@ -19,8 +19,13 @@
 #include "nodes/execnodes.h"
 #include "nodes/pathnodes.h"
 #include "utils/relcache.h"
-#include "sockstream.h"
-#include "kite_client.h"
+#include "kitesdk.h"
+
+typedef struct kite_request_t {
+	char *host;
+	int fragcnt;
+	kite_handle_t *hdl;
+} kite_request_t;
 
 /*
  * FDW-specific planner information kept in RelOptInfo.fdw_private for a
@@ -143,9 +148,9 @@ extern void process_pending_request(AsyncRequest *areq);
 
 /* in connection.c */
 #ifdef KITE_CONNECT
-extern sockstream_t *GetConnection(UserMapping *user, bool will_prep_stmt,
+extern kite_request_t *GetConnection(UserMapping *user, bool will_prep_stmt,
 							 PgFdwConnState **state);
-extern void ReleaseConnection(sockstream_t *sockstream);
+extern void ReleaseConnection(kite_request_t *req);
 #else
 extern PGconn *GetConnection(UserMapping *user, bool will_prep_stmt,
 							 PgFdwConnState **state);

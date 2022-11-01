@@ -119,16 +119,16 @@ static bool disconnect_cached_connections(Oid serverid);
 
 
 #ifdef KITE_CONNECT
-static sockstream_t *connect_kite_server(ForeignServer *server, UserMapping *user) 
+static kite_request_t *connect_kite_server(ForeignServer *server, UserMapping *user) 
 {
-	sockstream_t *volatile ss = NULL;
+	kite_request_t *volatile req = NULL;
 
 	PG_TRY();
 	{
 		const char **keywords;
 		const char **values;
 		int			n;
-		char *host = NULL;
+		char *host = NULL, *p;
 
 		/*
 		 * Construct connection params from generic options of ForeignServer
@@ -158,32 +158,44 @@ static sockstream_t *connect_kite_server(ForeignServer *server, UserMapping *use
 			}
 		}
 
-
-		ss = kite_connect(host);
+		p = host;
+		while ((p = strchr(p, ',')) != NULL) {
+			*p = '\n';
+			p++;
+		}
+		req = (kite_request_t *) palloc0(sizeof(kite_request_t));
+		req->host = host;
+		req->hdl = 0;
+		req->fragcnt = 4;
 
 		pfree(keywords);
 		pfree(values);
-		if (host) pfree(host);
 	}
 	PG_CATCH();
 	{
-		if (ss) {
-			kite_destroy(ss);
+		if (req) {
+			if (req->host) pfree(req->host);
+			pfree(req);
+			req = 0;
 		}
 		PG_RE_THROW();
 
 	}
 	PG_END_TRY();
 
-	return ss;
+	return req;
 }
 
-static void disconnect_kited_server(sockstream_t *ss) 
+static void disconnect_kite_server(kite_request_t *req) 
 {
-	kite_destroy(ss);
+	if (req) {
+		if (req->host) pfree(req->host);
+		if (req->hdl) kite_release(req->hdl);
+		pfree(req);
+	}
 }
 
-sockstream_t *
+kite_request_t *
 GetConnection(UserMapping *user, bool will_prep_stmt, PgFdwConnState **state)
 {
         ForeignServer *server = GetForeignServer(user->serverid);
@@ -799,14 +811,18 @@ begin_remote_xact(ConnCacheEntry *entry)
 
 #ifdef KITE_CONNECT
 void
-ReleaseConnection(sockstream_t *sockstream)
+ReleaseConnection(kite_request_t *req)
 {
 	/*
 	 * Currently, we don't actually track connection references because all
 	 * cleanup is managed on a transaction or subtransaction basis instead. So
 	 * there's nothing to do here.
 	 */
-	kite_destroy(sockstream);
+	if (req) {
+		if (req->host) pfree(req->host);
+		if (req->hdl) kite_release(req->hdl);
+		pfree(req);
+	}
 
 }
 #else

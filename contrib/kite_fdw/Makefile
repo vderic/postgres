@@ -10,7 +10,6 @@ OBJS = \
 	shippable.o \
 	decimal.o \
 	json.o \
-	kite_client.o \
 	decode.o \
 	op.o \
 	numeric.o \
@@ -21,7 +20,7 @@ OBJS = \
 PGFILEDESC = "postgres_fdw - foreign data wrapper for PostgreSQL"
 
 PG_CPPFLAGS = -I$(libpq_srcdir) -Iext/include -DKITE_CONNECT
-SHLIB_LINK_INTERNAL = $(libpq) -Lext/lib -lxrg -lsproto  -lhop -larrow -larrow_bundled_dependencies -llz4 -lstdc++ -std=c++11
+SHLIB_LINK_INTERNAL = $(libpq) -Lext/lib -lkitesdk -levent -lxrg -lsproto -lhop -larrow -larrow_bundled_dependencies -llz4 -lstdc++ -std=c++11
 
 EXTENSION = kite_fdw
 DATA = kite_fdw--1.0.sql kite_fdw--1.0--1.1.sql

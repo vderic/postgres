@@ -2,10 +2,11 @@
 #define AGG_H
 
 #include "postgres.h"
+#include "funcapi.h"
 #include "nodes/pg_list.h"
 #include "xrg.h"
 #include "hop/hashagg.h"
-#include "kite_client.h"
+#include "kitesdk.h"
 
 typedef struct kite_target_t kite_target_t;
 struct kite_target_t {
@@ -36,7 +37,7 @@ struct xrg_agg_t {
 };
 
 xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_attrs);
-int xrg_agg_fetch(xrg_agg_t *agg, sockstream_t *ss);
+int xrg_agg_fetch(xrg_agg_t *agg, kite_handle_t *hdl);
 int xrg_agg_get_next(xrg_agg_t *agg, AttInMetadata *attinmeta, Datum *datums, bool *flag, int n);
 
 void xrg_agg_destroy(xrg_agg_t *agg);

@@ -382,74 +382,71 @@ void xrg_agg_destroy(xrg_agg_t *agg) {
 
 
 
-static int xrg_agg_process(xrg_agg_t *agg, kite_result_t *res) {
-	xrg_iter_t *iter = 0;
-	char *buf = 0;
-	int buflen = 0;
+static int xrg_agg_process(xrg_agg_t *agg, xrg_iter_t *iter, char **buf, int *buflen) {
 	ListCell *lc;
 	int ret = 0;
 
-	if (res->ncol != agg->ncol) {
+	if (iter->nvec != agg->ncol) {
 		elog(ERROR, "xrg_agg_process: number of columns returned from kite not match (%d != %d)", 
-				agg->ncol, res->ncol);
+				agg->ncol, iter->nvec);
 		return 1;
 	}
 
-	while ((iter = kite_result_next(res)) != 0) {
-		int len = 0;
-		uint64_t hval = 0; // hash value of the groupby keys
+	int len = 0;
+	uint64_t hval = 0; // hash value of the groupby keys
 
+	if (! agg->attr) {
+		agg->attr = (xrg_attr_t *) malloc(sizeof(xrg_attr_t) * iter->nvec);
+		//agg->ncol = iter->nvec;
+		memcpy(agg->attr, iter->attr, sizeof(xrg_attr_t) * iter->nvec);
+	}
 
-		if (! agg->attr) {
-			agg->attr = (xrg_attr_t *) malloc(sizeof(xrg_attr_t) * iter->nvec);
-			//agg->ncol = iter->nvec;
-			memcpy(agg->attr, iter->attr, sizeof(xrg_attr_t) * iter->nvec);
+	foreach (lc, agg->groupby_attrs) {
+		int idx = lfirst_int(lc);
+		int itemsz = iter->attr[idx].itemsz;
+		const char *p = iter->value[idx];
+		if (itemsz < 0) {
+			itemsz = xrg_bytea_len(iter->value[idx]);
+			p = xrg_bytea_ptr(iter->value[idx]);
 		}
 
-		foreach (lc, agg->groupby_attrs) {
-			int idx = lfirst_int(lc);
-			int itemsz = iter->attr[idx].itemsz;
-			const char *p = iter->value[idx];
-			if (itemsz < 0) {
-				itemsz = xrg_bytea_len(iter->value[idx]);
-				p = xrg_bytea_ptr(iter->value[idx]);
+		hval ^= komihash(p, itemsz, 0);  // XOR
+
+	}
+
+	len = serialize(iter, buf, buflen);
+	return hagg_feed(agg->hagg, hval, *buf, len);
+}
+
+int xrg_agg_fetch(xrg_agg_t *agg, kite_handle_t *hdl) {
+	int ret = 0;
+	char *buf = 0;
+	int buflen = 0;
+	char errmsg[1024];
+	xrg_iter_t *iter;
+
+	// get all data from socket
+	if (! agg->reached_eof)  {
+
+		while (true) {
+			ret = kite_next_row(hdl, &iter, errmsg, sizeof(errmsg));
+			if (ret == 0) {
+				if ((ret = xrg_agg_process(agg, iter, &buf, &buflen)) != 0) {
+					break;
+				}
+			} else if (ret == 1) {
+				agg->reached_eof = true;
+				ret = 0;
+				break;
+			} else {
+				// error handling
+				break;
 			}
-
-			hval ^= komihash(p, itemsz, 0);  // XOR
-
 		}
-
-		len = serialize(iter, &buf, &buflen);
-		ret = hagg_feed(agg->hagg, hval, buf, len);
-		if (ret) {
-			elog(LOG, "hagg_feed failed. ret = %d", ret);
-			break;
-		}
-
 	}
 
 	if (buf) free(buf);
-
 	return ret;
-}
-
-int xrg_agg_fetch(xrg_agg_t *agg, sockstream_t *ss) {
-	int ret = 0;
-	// get all data from socket
-	if (! agg->reached_eof)  {
-		kite_result_t *res = 0;
-		while ((res = kite_get_result(ss)) != 0) {
-			if ((ret = xrg_agg_process(agg, res)) != 0) {
-				return ret;
-			}
-	
-			kite_result_destroy(res);
-			res = 0;
-		}
-
-		agg->reached_eof = true;
-	}
-	return 0;
 }
 
 

@@ -50,11 +50,10 @@
 #include "utils/sampling.h"
 #include "utils/selfuncs.h"
 
-#include "sockstream.h"
+#include "kitesdk.h"
 #include "nodes/print.h"
 #include "xrg.h"
 #include "json.h"
-#include "kite_client.h"
 #include "decode.h"
 #include "agg.h"
 
@@ -78,6 +77,8 @@ PG_MODULE_MAGIC;
  */
 enum FdwScanPrivateIndex
 {
+	/* Relation Schema (as a String node) */
+	FdwScanPrivateSchema,
 	/* SQL statement to execute remotely (as a String node) */
 	FdwScanPrivateSelectSql,
 	/* Integer list of attribute numbers retrieved by the SELECT */
@@ -110,6 +111,7 @@ typedef struct PgFdwScanState
 	AttInMetadata *attinmeta;	/* attribute datatype conversion metadata */
 
 	/* extracted fdw_private data */
+	char       *schema;             /* text of schema */
 	char	   *query;			/* text of SELECT command */
 	List	   *retrieved_attrs;	/* list of retrieved attribute numbers */
 	List       *retrieved_groupby_attrs; /* list of retrieved group by index in kite */
@@ -119,7 +121,7 @@ typedef struct PgFdwScanState
 	/* for remote query execution */
 #ifdef KITE_CONNECT
 	xrg_agg_t *agg; /* xrg_agg_t for aggregate */
-	sockstream_t *sockstream;       /* kite connectino for the scan */
+	kite_request_t *req;       /* kite connectino for the scan */
 #else
 	PGconn	   *conn;			/* connection for the scan */
 #endif
@@ -327,7 +329,7 @@ static HeapTuple make_tuple_from_agg(xrg_agg_t *agg,
                                                    ForeignScanState *fsstate,
                                                    MemoryContext temp_context);
 
-static HeapTuple make_tuple_from_result_row(kite_result_t *res,
+static HeapTuple make_tuple_from_result_row(xrg_iter_t *iter,
 											int row,
 											Relation rel,
 											AttInMetadata *attinmeta,
@@ -678,10 +680,10 @@ postgresGetForeignPlan(PlannerInfo *root,
 	List       *retrieved_aggfnoids = NIL;
 	List	   *retrieved_groupby_attrs = NIL;
 	StringInfoData sql;
+	StringInfoData schema;
 	bool		has_final_sort = false;
 	bool		has_limit = false;
 	ListCell   *lc;
-	char       *json = 0;
 
 	elog(LOG, "postgresGetForeignPlan");
 	/*
@@ -861,13 +863,8 @@ postgresGetForeignPlan(PlannerInfo *root,
 		RangeTblEntry *scanrte = planner_rt_fetch(relinfo->relid, root);
 		Relation scanrel = table_open(scanrte->relid, NoLock);
 		TupleDesc tupdesc = RelationGetDescr(scanrel);
-		char *js = kite_build_json(sql.data, tupdesc, 0, 1);
-		if (js) {
-			json = pstrdup(js);
-			elog(LOG, json);
-			free(js);
-		}
-
+		initStringInfo(&schema);
+		kite_build_schema(&schema, tupdesc);
 		table_close(scanrel, NoLock);
 	}
        
@@ -876,7 +873,8 @@ postgresGetForeignPlan(PlannerInfo *root,
 	 * Build the fdw_private list that will be available to the executor.
 	 * Items in the list must match order in enum FdwScanPrivateIndex.
 	 */
-	fdw_private = list_make3(makeString(json),
+	fdw_private = list_make4(makeString(schema.data), 
+			makeString(sql.data),
 							 retrieved_attrs,
 							 makeInteger(fpinfo->fetch_size));
 #else
@@ -1013,7 +1011,7 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	user = GetUserMapping(userid, table->serverid);
 
 #if KITE_CONNECT
-	fsstate->sockstream = GetConnection(user, false, &fsstate->conn_state);
+	fsstate->req = GetConnection(user, false, &fsstate->conn_state);
 	fsstate->cursor_exists = false;
 
 #else
@@ -1029,6 +1027,7 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 #endif
 
 	/* Get private info created by planner functions. */
+	fsstate->schema = strVal(list_nth(fsplan->fdw_private, FdwScanPrivateSchema));
 	fsstate->query = strVal(list_nth(fsplan->fdw_private,
 									 FdwScanPrivateSelectSql));
 	fsstate->retrieved_attrs = (List *) list_nth(fsplan->fdw_private,
@@ -1262,8 +1261,8 @@ postgresEndForeignScan(ForeignScanState *node)
 		return;
 
 #ifdef KITE_CONNECT
-	ReleaseConnection(fsstate->sockstream);
-	fsstate->sockstream = NULL;
+	ReleaseConnection(fsstate->req);
+	fsstate->req = NULL;
 
 	if (fsstate->agg) {
 		xrg_agg_destroy(fsstate->agg);
@@ -1438,7 +1437,7 @@ estimate_path_cost_size(PlannerInfo *root,
 		List	   *local_param_join_conds;
 		StringInfoData sql;
 #ifdef KITE_CONNECT
-		sockstream_t *sockstream;
+		kite_request_t *req;
 #else
 		PGconn	   *conn;
 #endif
@@ -2027,7 +2026,8 @@ create_cursor(ForeignScanState *node)
 	int			numParams = fsstate->numParams;
 	const char **values = fsstate->param_values;
 #ifdef KITE_CONNECT
-	sockstream_t *sockstream = fsstate->sockstream;
+	kite_request_t *req = fsstate->req;
+	char errmsg[1024];
 
 #else
 	PGconn	   *conn = fsstate->conn;
@@ -2062,8 +2062,10 @@ create_cursor(ForeignScanState *node)
 
 #ifdef KITE_CONNECT
 
-	if (kite_exec(sockstream, fsstate->query) != 0) {
-		elog(ERROR, "kite_get_result failed");
+	/* TODO: kite_submit */
+	req->hdl = kite_submit(req->host, fsstate->schema, fsstate->query, -1, req->fragcnt, errmsg, sizeof(errmsg));
+	if (! req->hdl) {
+		elog(ERROR, "kite_submit failed");
 		return;
 	}
 
@@ -2126,7 +2128,7 @@ fetch_more_data(ForeignScanState *node)
 {
 	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
 #ifdef KITE_CONNECT
-	kite_result_t *volatile res = NULL;
+	char errmsg[1024];
 #else
 	PGresult   *volatile res = NULL;
 #endif
@@ -2143,14 +2145,14 @@ fetch_more_data(ForeignScanState *node)
 #ifdef KITE_CONNECT
 	PG_TRY();
 	{
-		sockstream_t *sockstream = fsstate->sockstream;
+		kite_handle_t *hdl = fsstate->req->hdl;
 		int numrows;
 		int i;
 
 		if (fsstate->agg) {
 			int batchsz = 1000;
 
-			xrg_agg_fetch(fsstate->agg, sockstream);
+			xrg_agg_fetch(fsstate->agg, hdl);
 
 			numrows = 0;
 			fsstate->tuples = (HeapTuple *) palloc0(batchsz *sizeof(HeapTuple));
@@ -2176,46 +2178,49 @@ fetch_more_data(ForeignScanState *node)
 			fsstate->eof_reached = (numrows < batchsz);
 
 		} else {
-
-		res = kite_get_result(sockstream);
-		if (! res) {
+			int batchsz = 1000;
+			xrg_iter_t *iter = 0;
+			int e = 0;
 			numrows = 0;
-                	fsstate->eof_reached = (numrows == 0);
-		} else {
 
-                /* Convert the data into HeapTuples */
-		numrows = kite_result_get_nrow(res);
+			fsstate->tuples = (HeapTuple *) palloc0(batchsz *sizeof(HeapTuple));
+			fsstate->num_tuples = batchsz;
+			fsstate->next_tuple = 0;
 
-                fsstate->tuples = (HeapTuple *) palloc0(numrows * sizeof(HeapTuple));
-                fsstate->num_tuples = numrows;
-                fsstate->next_tuple = 0;
+			for (i = 0 ; i < batchsz && fsstate->eof_reached == false ; i++) {
+				Assert(IsA(node->ss.ps.plan, ForeignScan));
 
-                for (i = 0; i < numrows; i++)
-                {
-                        Assert(IsA(node->ss.ps.plan, ForeignScan));
+				e = kite_next_row(hdl, &iter, errmsg, sizeof(errmsg));
+				if (e == 0) {
+					fsstate->tuples[i] = make_tuple_from_result_row(iter, 
+							i,
+							fsstate->rel,
+							fsstate->attinmeta,
+							fsstate->retrieved_attrs,
+							node,
+							fsstate->temp_cxt);
+					numrows++;
+				} else if (e == 1) {
+					fsstate->eof_reached = true;
+				} else {
+					// error
+					elog(ERROR, "kite_next_row failed");
+					fsstate->eof_reached = true;
+				}
+			}
 
-                        fsstate->tuples[i] =
-                                make_tuple_from_result_row(res, i,
-                                                                                   fsstate->rel,
-                                                                                   fsstate->attinmeta,
-                                                                                   fsstate->retrieved_attrs,
-                                                                                   node,
-                                                                                   fsstate->temp_cxt);
-                }
+			fsstate->num_tuples = numrows;
+			fsstate->next_tuple = 0;
+
+                	/* Update fetch_ct_2 */
+               		if (fsstate->fetch_ct_2 < 2)
+                       		fsstate->fetch_ct_2++;
 		}
 
-                /* Update fetch_ct_2 */
-                if (fsstate->fetch_ct_2 < 2)
-                        fsstate->fetch_ct_2++;
-
-                /* Must be EOF if we didn't get as many tuples as we asked for. */
-                fsstate->eof_reached = (numrows == 0);
-
-		}
         }
         PG_FINALLY();
         {
-                if (res) kite_result_destroy(res);
+		;
         }
         PG_END_TRY();
 
@@ -3928,7 +3933,7 @@ make_tuple_from_agg(xrg_agg_t *agg,
 
 
 static HeapTuple
-make_tuple_from_result_row(kite_result_t *res,
+make_tuple_from_result_row(xrg_iter_t *iter,
                                                    int row,
                                                    Relation rel,
                                                    AttInMetadata *attinmeta,
@@ -3945,10 +3950,7 @@ make_tuple_from_result_row(kite_result_t *res,
 	ErrorContextCallback errcallback;
 	MemoryContext oldcontext;
 	ListCell   *lc;
-	xrg_iter_t *iter = 0;
 	int j = 0;
-
-	Assert(row < kite_result_get_nrow(res));
 
 	/*
 	 * Do the following work in a temp context that we reset after each tuple.
@@ -3984,11 +3986,6 @@ make_tuple_from_result_row(kite_result_t *res,
 	errcallback.arg = (void *) &errpos;
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
-
-	iter = kite_result_next(res);
-	if (!iter) {
-		elog(ERROR, "xrg_iter_t is NULL");
-	}
 
 	j = 0;
 	foreach  (lc, retrieved_attrs) {

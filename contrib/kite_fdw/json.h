@@ -9,11 +9,10 @@ extern "C" {
 
 #include "postgres.h"
 #include "access/tupdesc.h"
-#include "sockstream.h"
 #include "xrg.h"
 
 /* json helper */
-char *kite_build_json(char *sql, TupleDesc tupdesc, int curfrag, int nfrag);
+void kite_build_schema(StringInfo schema, TupleDesc tupdesc);
 
 
 #ifdef __cplusplus
