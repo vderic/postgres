@@ -17,6 +17,11 @@ OBJS = \
 	exx_int.o \
 	agg.o 
 
+all: ext $(OBJS)
+
+ext:
+	make -C ext
+
 PGFILEDESC = "postgres_fdw - foreign data wrapper for PostgreSQL"
 
 PG_CPPFLAGS = -I$(libpq_srcdir) -Iext/include -DKITE_CONNECT
@@ -38,3 +43,5 @@ top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
+
+.PHONY: ext
