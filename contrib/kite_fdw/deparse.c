@@ -1291,6 +1291,9 @@ deparseSelectStmtForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *rel,
 		/* Append HAVING clause */
 		if (remote_conds)
 		{
+#if KITE_CONNECT
+			elog(ERROR, "HAVING not supported by kite");
+#endif
 			appendStringInfoString(buf, " HAVING ");
 			appendConditions(remote_conds, &context);
 		}
