@@ -2192,6 +2192,11 @@ fetch_more_data(ForeignScanState *node)
 
 				e = kite_next_row(hdl, &iter, errmsg, sizeof(errmsg));
 				if (e == 0) {
+					if (iter == 0) {
+						fsstate->eof_reached = true;
+						break;
+					}
+
 					fsstate->tuples[i] = make_tuple_from_result_row(iter, 
 							i,
 							fsstate->rel,
@@ -2200,8 +2205,6 @@ fetch_more_data(ForeignScanState *node)
 							node,
 							fsstate->temp_cxt);
 					numrows++;
-				} else if (e == 1) {
-					fsstate->eof_reached = true;
 				} else {
 					// error
 					elog(ERROR, "kite_next_row failed");

@@ -426,18 +426,20 @@ int xrg_agg_fetch(xrg_agg_t *agg, kite_handle_t *hdl) {
 	xrg_iter_t *iter;
 
 	// get all data from socket
-	if (! agg->reached_eof)  {
+	if (! agg->reached_eof) {
 
 		while (true) {
 			ret = kite_next_row(hdl, &iter, errmsg, sizeof(errmsg));
 			if (ret == 0) {
+				if (iter == 0) {
+					agg->reached_eof = true;
+					ret = 0;
+					break;
+				}
+
 				if ((ret = xrg_agg_process(agg, iter, &buf, &buflen)) != 0) {
 					break;
 				}
-			} else if (ret == 1) {
-				agg->reached_eof = true;
-				ret = 0;
-				break;
 			} else {
 				// error handling
 				break;
