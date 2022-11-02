@@ -1096,6 +1096,13 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	 */
 	numParams = list_length(fsplan->fdw_exprs);
 	fsstate->numParams = numParams;
+
+#if KITE_CONNECT
+	if (numParams > 0) {
+		elog(ERROR, "Statement with muiltple parameters not supported");
+	}
+#endif
+
 	if (numParams > 0)
 		prepare_query_params((PlanState *) node,
 							 fsplan->fdw_exprs,
