@@ -260,6 +260,9 @@ InitPgFdwOptions(void)
 		{"sslcert", UserMappingRelationId, true},
 		{"sslkey", UserMappingRelationId, true},
 
+		/* kite specified options */
+		{"fragcnt", ForeignServerRelationId, false},
+
 		{NULL, InvalidOid, false}
 	};
 
