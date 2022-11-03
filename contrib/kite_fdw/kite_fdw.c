@@ -119,12 +119,9 @@ typedef struct PgFdwScanState
 
 
 	/* for remote query execution */
-#ifdef KITE_CONNECT
 	xrg_agg_t *agg; /* xrg_agg_t for aggregate */
 	kite_request_t *req;       /* kite connectino for the scan */
-#else
-	PGconn	   *conn;			/* connection for the scan */
-#endif
+
 	PgFdwConnState *conn_state; /* extra per-connection state */
 	unsigned int cursor_number; /* quasi-unique ID for my cursor */
 	bool		cursor_exists;	/* have we created the cursor? */
@@ -212,15 +209,6 @@ typedef struct ConversionLocation
 	ForeignScanState *fsstate;	/* plan node being processed, or NULL */
 } ConversionLocation;
 
-#if 0
-/* Callback argument for ec_member_matches_foreign */
-typedef struct
-{
-	Expr	   *current;		/* current expr, or NULL if not yet found */
-	List	   *already_used;	/* expressions already dealt with */
-} ec_member_foreign_arg;
-#endif
-
 /*
  * SQL functions
  */
@@ -248,25 +236,11 @@ static void postgresReScanForeignScan(ForeignScanState *node);
 static void postgresEndForeignScan(ForeignScanState *node);
 
 
-#if 0
-static void postgresExplainForeignScan(ForeignScanState *node,
-									   ExplainState *es);
-
-static bool postgresAnalyzeForeignTable(Relation relation,
-										AcquireSampleRowsFunc *func,
-										BlockNumber *totalpages);
-#endif
 static void postgresGetForeignUpperPaths(PlannerInfo *root,
 										 UpperRelationKind stage,
 										 RelOptInfo *input_rel,
 										 RelOptInfo *output_rel,
 										 void *extra);
-#if 0
-static bool postgresIsForeignPathAsyncCapable(ForeignPath *path);
-static void postgresForeignAsyncRequest(AsyncRequest *areq);
-static void postgresForeignAsyncConfigureWait(AsyncRequest *areq);
-static void postgresForeignAsyncNotify(AsyncRequest *areq);
-#endif
 
 
 /*
@@ -279,12 +253,6 @@ static void estimate_path_cost_size(PlannerInfo *root,
 									PgFdwPathExtraData *fpextra,
 									double *p_rows, int *p_width,
 									Cost *p_startup_cost, Cost *p_total_cost);
-static void get_remote_estimate(const char *sql,
-								PGconn *conn,
-								double *rows,
-								int *width,
-								Cost *startup_cost,
-								Cost *total_cost);
 static void adjust_foreign_grouping_path_cost(PlannerInfo *root,
 											  List *pathkeys,
 											  double retrieved_rows,
@@ -294,8 +262,6 @@ static void adjust_foreign_grouping_path_cost(PlannerInfo *root,
 											  Cost *p_run_cost);
 static void create_cursor(ForeignScanState *node);
 static void fetch_more_data(ForeignScanState *node);
-static void close_cursor(PGconn *conn, unsigned int cursor_number,
-						 PgFdwConnState *conn_state);
 static void prepare_query_params(PlanState *node,
 								 List *fdw_exprs,
 								 int numParams,
@@ -306,21 +272,7 @@ static void process_query_params(ExprContext *econtext,
 								 FmgrInfo *param_flinfo,
 								 List *param_exprs,
 								 const char **param_values);
-#if 0
-static int	postgresAcquireSampleRowsFunc(Relation relation, int elevel,
-										  HeapTuple *rows, int targrows,
-										  double *totalrows,
-										  double *totaldeadrows);
-static void analyze_row_processor(PGresult *res, int row,
-								  PgFdwAnalyzeState *astate);
-static void produce_tuple_asynchronously(AsyncRequest *areq, bool fetch);
-#endif
-
-#if 0
-static void fetch_more_data_begin(AsyncRequest *areq);
-static void complete_pending_request(AsyncRequest *areq);
-#endif
-#ifdef KITE_CONNECT
+/* KITE */
 static HeapTuple make_tuple_from_agg(xrg_agg_t *agg,
 						   int row,
                                                    Relation rel,
@@ -337,15 +289,7 @@ static HeapTuple make_tuple_from_result_row(xrg_iter_t *iter,
 											ForeignScanState *fsstate,
 											MemoryContext temp_context);
 
-#else
-static HeapTuple make_tuple_from_result_row(PGresult *res,
-											int row,
-											Relation rel,
-											AttInMetadata *attinmeta,
-											List *retrieved_attrs,
-											ForeignScanState *fsstate,
-											MemoryContext temp_context);
-#endif
+/* END KITE */
 
 static void conversion_error_callback(void *arg);
 static bool foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel,
@@ -383,63 +327,8 @@ kite_fdw_handler(PG_FUNCTION_ARGS)
 	routine->ReScanForeignScan = postgresReScanForeignScan;
 	routine->EndForeignScan = postgresEndForeignScan;
 
-#if 0
-	/* Functions for updating foreign tables */
-	routine->AddForeignUpdateTargets = postgresAddForeignUpdateTargets;
-	routine->PlanForeignModify = postgresPlanForeignModify;
-	routine->BeginForeignModify = postgresBeginForeignModify;
-	routine->ExecForeignInsert = postgresExecForeignInsert;
-	routine->ExecForeignBatchInsert = postgresExecForeignBatchInsert;
-	routine->GetForeignModifyBatchSize = postgresGetForeignModifyBatchSize;
-	routine->ExecForeignUpdate = postgresExecForeignUpdate;
-	routine->ExecForeignDelete = postgresExecForeignDelete;
-	routine->EndForeignModify = postgresEndForeignModify;
-	routine->BeginForeignInsert = postgresBeginForeignInsert;
-	routine->EndForeignInsert = postgresEndForeignInsert;
-	routine->IsForeignRelUpdatable = postgresIsForeignRelUpdatable;
-	routine->PlanDirectModify = postgresPlanDirectModify;
-	routine->BeginDirectModify = postgresBeginDirectModify;
-	routine->IterateDirectModify = postgresIterateDirectModify;
-	routine->EndDirectModify = postgresEndDirectModify;
-#endif
-
-#if 0
-	/* Function for EvalPlanQual rechecks */
-	routine->RecheckForeignScan = postgresRecheckForeignScan;
-#endif
-#if 0
-	/* Support functions for EXPLAIN */
-	routine->ExplainForeignScan = postgresExplainForeignScan;
-	routine->ExplainForeignModify = postgresExplainForeignModify;
-	routine->ExplainDirectModify = postgresExplainDirectModify;
-#endif
-
-#if 0
-	/* Support function for TRUNCATE */
-	routine->ExecForeignTruncate = postgresExecForeignTruncate;
-#endif
-
-#if 0
-	/* Support functions for ANALYZE */
-	routine->AnalyzeForeignTable = postgresAnalyzeForeignTable;
-
-	/* Support functions for IMPORT FOREIGN SCHEMA */
-	routine->ImportForeignSchema = postgresImportForeignSchema;
-
-	/* Support functions for join push-down */
-	routine->GetForeignJoinPaths = postgresGetForeignJoinPaths;
-#endif
-
 	/* Support functions for upper relation push-down */
 	routine->GetForeignUpperPaths = postgresGetForeignUpperPaths;
-
-#if 0
-	/* Support functions for asynchronous execution */
-	routine->IsForeignPathAsyncCapable = postgresIsForeignPathAsyncCapable;
-	routine->ForeignAsyncRequest = postgresForeignAsyncRequest;
-	routine->ForeignAsyncConfigureWait = postgresForeignAsyncConfigureWait;
-	routine->ForeignAsyncNotify = postgresForeignAsyncNotify;
-#endif
 
 	PG_RETURN_POINTER(routine);
 }
@@ -460,7 +349,6 @@ postgresGetForeignRelSize(PlannerInfo *root,
 	ListCell   *lc;
 	RangeTblEntry *rte = planner_rt_fetch(baserel->relid, root);
 
-	elog(LOG, "postgresGetForeignRelSize");
 	/*
 	 * We use PgFdwRelationInfo to pass various information to subsequent
 	 * functions.
@@ -520,7 +408,6 @@ postgresGetForeignRelSize(PlannerInfo *root,
 	 * sent to the remote and thus we wouldn't really need to retrieve the
 	 * columns used in them.  Doesn't seem worth detecting that case though.)
 	 */
-	elog_node_display(LOG, "BASE TARGET", (Node *) baserel->reltarget->exprs, true);
 
 	fpinfo->attrs_used = NULL;
 	pull_varattnos((Node *) baserel->reltarget->exprs, baserel->relid,
@@ -631,7 +518,6 @@ postgresGetForeignPaths(PlannerInfo *root,
 	PgFdwRelationInfo *fpinfo = (PgFdwRelationInfo *) baserel->fdw_private;
 	ForeignPath *path;
 
-	elog(LOG, "postgresGetForeignPaths");
 	/*
 	 * Create simplest ForeignScan path node and add it to baserel.  This path
 	 * corresponds to SeqScan path of regular tables (though depending on what
@@ -685,7 +571,6 @@ postgresGetForeignPlan(PlannerInfo *root,
 	bool		has_limit = false;
 	ListCell   *lc;
 
-	elog(LOG, "postgresGetForeignPlan");
 	/*
 	 * Get FDW private data created by postgresGetForeignUpperPaths(), if any.
 	 */
@@ -854,9 +739,8 @@ postgresGetForeignPlan(PlannerInfo *root,
 	/* Remember remote_exprs for possible use by postgresPlanDirectModify */
 	fpinfo->final_remote_exprs = remote_exprs;
 
-#ifdef KITE_CONNECT
 	/*
-	 * TODO: build the schema for KITE
+	 * build the schema for KITE
 	 */
 	{
 		RelOptInfo *relinfo = IS_UPPER_REL(foreignrel) ? fpinfo->outerrel : foreignrel;
@@ -877,11 +761,7 @@ postgresGetForeignPlan(PlannerInfo *root,
 			makeString(sql.data),
 							 retrieved_attrs,
 							 makeInteger(fpinfo->fetch_size));
-#else
-	fdw_private = list_make3(makeString(sql.data),
-							 retrieved_attrs,
-							 makeInteger(fpinfo->fetch_size));
-#endif
+
 	if (IS_JOIN_REL(foreignrel) || IS_UPPER_REL(foreignrel)) {
 		fdw_private = lappend(fdw_private,
 							  makeString(fpinfo->relation_name));
@@ -980,7 +860,6 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	int			rtindex;
 	int			numParams;
 
-	elog(LOG, "postgresBeginForeignScan");
 	/*
 	 * Do nothing in EXPLAIN (no ANALYZE) case.  node->fdw_state stays NULL.
 	 */
@@ -1010,21 +889,11 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	table = GetForeignTable(rte->relid);
 	user = GetUserMapping(userid, table->serverid);
 
-#if KITE_CONNECT
+	/* KITE */
 	fsstate->req = GetConnection(user, false, &fsstate->conn_state);
 	fsstate->cursor_exists = false;
-
-#else
-	/*
-	 * Get connection to the foreign server.  Connection manager will
-	 * establish new connection if necessary.
-	 */
-	fsstate->conn = GetConnection(user, false, &fsstate->conn_state);
-
-	/* Assign a unique ID for my cursor */
-	fsstate->cursor_number = GetCursorNumber(fsstate->conn);
-	fsstate->cursor_exists = false;
-#endif
+	fsstate->cursor_number = 0;
+	/* END KITE */
 
 	/* Get private info created by planner functions. */
 	fsstate->schema = strVal(list_nth(fsplan->fdw_private, FdwScanPrivateSchema));
@@ -1053,27 +922,6 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 				FdwScanPrivateRetrievedGroupByAttrs);
 	}
 
-        {
-                ListCell *lc;
-
-		if (fsstate->retrieved_aggfnoids) {
-                foreach (lc, fsstate->retrieved_aggfnoids) {
-                        Oid fn = lfirst_oid(lc);
-                        elog(LOG, "OID = %d", fn);
-
-                }
-		}
-
-
-		if (fsstate->retrieved_groupby_attrs) {
-                foreach(lc, fsstate->retrieved_groupby_attrs) {
-                        int idx = lfirst_int(lc);
-                        elog(LOG, "GRPBY = %d", idx);
-                }
-		}
-        }
-
-
 	/*
 	 * Get info we'll need for converting data fetched from the foreign server
 	 * into local representation and error reporting during that process.
@@ -1097,12 +945,13 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	numParams = list_length(fsplan->fdw_exprs);
 	fsstate->numParams = numParams;
 
-#if KITE_CONNECT
+	/* KITE */
 	if (numParams > 0) {
 		elog(ERROR, "Statement with muiltple parameters not supported");
 	}
-#endif
+	/* END KITE */
 
+#if 0	
 	if (numParams > 0)
 		prepare_query_params((PlanState *) node,
 							 fsplan->fdw_exprs,
@@ -1111,6 +960,7 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 							 &fsstate->param_exprs,
 							 &fsstate->param_values);
 
+#endif
 	/* Set the async-capable flag */
 	fsstate->async_capable = node->ss.ps.async_capable;
 
@@ -1153,16 +1003,11 @@ postgresIterateForeignScan(ForeignScanState *node)
 	 */
 	if (fsstate->next_tuple >= fsstate->num_tuples)
 	{
-		/* In async mode, just clear tuple slot. */
-		if (fsstate->async_capable)
-			return ExecClearTuple(slot);
 		/* No point in another fetch if we already detected EOF, though. */
-#ifdef KITE_CONNECT
-		fetch_more_data(node);
-#else
+		/* KITE */
 		if (!fsstate->eof_reached)
 			fetch_more_data(node);
-#endif
+
 		/* If we didn't get any tuples, must be end of data. */
 		if (fsstate->next_tuple >= fsstate->num_tuples)
 			return ExecClearTuple(slot);
@@ -1185,72 +1030,8 @@ postgresIterateForeignScan(ForeignScanState *node)
 static void
 postgresReScanForeignScan(ForeignScanState *node)
 {
-#ifdef KITE_CONNECT
 	elog(ERROR, "ReScan not supported by kite");
 	return;
-
-#else
-	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
-	char		sql[64];
-	PGresult   *res;
-
-	elog(LOG, "postgresReScanForeignScan");
-	/* If we haven't created the cursor yet, nothing to do. */
-	if (!fsstate->cursor_exists)
-		return;
-
-	/*
-	 * If the node is async-capable, and an asynchronous fetch for it has been
-	 * begun, the asynchronous fetch might not have yet completed.  Check if
-	 * the node is async-capable, and an asynchronous fetch for it is still in
-	 * progress; if so, complete the asynchronous fetch before restarting the
-	 * scan.
-	 */
-	if (fsstate->async_capable &&
-		fsstate->conn_state->pendingAreq &&
-		fsstate->conn_state->pendingAreq->requestee == (PlanState *) node)
-		fetch_more_data(node);
-
-	/*
-	 * If any internal parameters affecting this node have changed, we'd
-	 * better destroy and recreate the cursor.  Otherwise, rewinding it should
-	 * be good enough.  If we've only fetched zero or one batch, we needn't
-	 * even rewind the cursor, just rescan what we have.
-	 */
-	if (node->ss.ps.chgParam != NULL)
-	{
-		fsstate->cursor_exists = false;
-		snprintf(sql, sizeof(sql), "CLOSE c%u",
-				 fsstate->cursor_number);
-	}
-	else if (fsstate->fetch_ct_2 > 1)
-	{
-		snprintf(sql, sizeof(sql), "MOVE BACKWARD ALL IN c%u",
-				 fsstate->cursor_number);
-	}
-	else
-	{
-		/* Easy: just rescan what we already have in memory, if anything */
-		fsstate->next_tuple = 0;
-		return;
-	}
-
-	/*
-	 * We don't use a PG_TRY block here, so be careful not to throw error
-	 * without releasing the PGresult.
-	 */
-	res = pgfdw_exec_query(fsstate->conn, sql, fsstate->conn_state);
-	if (PQresultStatus(res) != PGRES_COMMAND_OK)
-		pgfdw_report_error(ERROR, res, fsstate->conn, true, sql);
-	PQclear(res);
-
-	/* Now force a fresh FETCH. */
-	fsstate->tuples = NULL;
-	fsstate->num_tuples = 0;
-	fsstate->next_tuple = 0;
-	fsstate->fetch_ct_2 = 0;
-	fsstate->eof_reached = false;
-#endif
 }
 
 /*
@@ -1262,12 +1043,10 @@ postgresEndForeignScan(ForeignScanState *node)
 {
 	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
 
-	elog(LOG, "postgresEndForeignScan");
 	/* if fsstate is NULL, we are in EXPLAIN; nothing to do */
 	if (fsstate == NULL)
 		return;
 
-#ifdef KITE_CONNECT
 	ReleaseConnection(fsstate->req);
 	fsstate->req = NULL;
 
@@ -1275,128 +1054,9 @@ postgresEndForeignScan(ForeignScanState *node)
 		xrg_agg_destroy(fsstate->agg);
 		fsstate->agg = 0;
 	}
-#else
-	/* Close the cursor if open, to prevent accumulation of cursors */
-	if (fsstate->cursor_exists)
-		close_cursor(fsstate->conn, fsstate->cursor_number,
-					 fsstate->conn_state);
-
-	/* Release remote connection */
-	ReleaseConnection(fsstate->conn);
-	fsstate->conn = NULL;
-#endif
 
 	/* MemoryContexts will be deleted automatically. */
 }
-
-#if 0
-/*
- * postgresExplainForeignScan
- *		Produce extra output for EXPLAIN of a ForeignScan on a foreign table
- */
-static void
-postgresExplainForeignScan(ForeignScanState *node, ExplainState *es)
-{
-	ForeignScan *plan = castNode(ForeignScan, node->ss.ps.plan);
-	List	   *fdw_private = plan->fdw_private;
-
-	/*
-	 * Identify foreign scans that are really joins or upper relations.  The
-	 * input looks something like "(1) LEFT JOIN (2)", and we must replace the
-	 * digit string(s), which are RT indexes, with the correct relation names.
-	 * We do that here, not when the plan is created, because we can't know
-	 * what aliases ruleutils.c will assign at plan creation time.
-	 */
-	if (list_length(fdw_private) > FdwScanPrivateRelations)
-	{
-		StringInfo	relations;
-		char	   *rawrelations;
-		char	   *ptr;
-		int			minrti,
-					rtoffset;
-
-		rawrelations = strVal(list_nth(fdw_private, FdwScanPrivateRelations));
-
-		/*
-		 * A difficulty with using a string representation of RT indexes is
-		 * that setrefs.c won't update the string when flattening the
-		 * rangetable.  To find out what rtoffset was applied, identify the
-		 * minimum RT index appearing in the string and compare it to the
-		 * minimum member of plan->fs_relids.  (We expect all the relids in
-		 * the join will have been offset by the same amount; the Asserts
-		 * below should catch it if that ever changes.)
-		 */
-		minrti = INT_MAX;
-		ptr = rawrelations;
-		while (*ptr)
-		{
-			if (isdigit((unsigned char) *ptr))
-			{
-				int			rti = strtol(ptr, &ptr, 10);
-
-				if (rti < minrti)
-					minrti = rti;
-			}
-			else
-				ptr++;
-		}
-		rtoffset = bms_next_member(plan->fs_relids, -1) - minrti;
-
-		/* Now we can translate the string */
-		relations = makeStringInfo();
-		ptr = rawrelations;
-		while (*ptr)
-		{
-			if (isdigit((unsigned char) *ptr))
-			{
-				int			rti = strtol(ptr, &ptr, 10);
-				RangeTblEntry *rte;
-				char	   *relname;
-				char	   *refname;
-
-				rti += rtoffset;
-				Assert(bms_is_member(rti, plan->fs_relids));
-				rte = rt_fetch(rti, es->rtable);
-				Assert(rte->rtekind == RTE_RELATION);
-				/* This logic should agree with explain.c's ExplainTargetRel */
-				relname = get_rel_name(rte->relid);
-				if (es->verbose)
-				{
-					char	   *namespace;
-
-					namespace = get_namespace_name_or_temp(get_rel_namespace(rte->relid));
-					appendStringInfo(relations, "%s.%s",
-									 quote_identifier(namespace),
-									 quote_identifier(relname));
-				}
-				else
-					appendStringInfoString(relations,
-										   quote_identifier(relname));
-				refname = (char *) list_nth(es->rtable_names, rti - 1);
-				if (refname == NULL)
-					refname = rte->eref->aliasname;
-				if (strcmp(refname, relname) != 0)
-					appendStringInfo(relations, " %s",
-									 quote_identifier(refname));
-			}
-			else
-				appendStringInfoChar(relations, *ptr++);
-		}
-		ExplainPropertyText("Relations", relations->data, es);
-	}
-
-	/*
-	 * Add remote query, when VERBOSE option is specified.
-	 */
-	if (es->verbose)
-	{
-		char	   *sql;
-
-		sql = strVal(list_nth(fdw_private, FdwScanPrivateSelectSql));
-		ExplainPropertyText("Remote SQL", sql, es);
-	}
-}
-#endif
 
 /*
  * estimate_path_cost_size
@@ -1443,11 +1103,9 @@ estimate_path_cost_size(PlannerInfo *root,
 		List	   *remote_param_join_conds;
 		List	   *local_param_join_conds;
 		StringInfoData sql;
-#ifdef KITE_CONNECT
+		/* KITE */
 		kite_request_t *req;
-#else
-		PGconn	   *conn;
-#endif
+
 		Selectivity local_sel;
 		QualCost	local_cost;
 		List	   *fdw_scan_tlist = NIL;
@@ -1494,14 +1152,12 @@ estimate_path_cost_size(PlannerInfo *root,
 								&retrieved_groupby_attrs);
 
 		/* Get the remote estimate */
-#ifdef KITE_CONNECT
-
-#else
-		conn = GetConnection(fpinfo->user, false, NULL);
-		get_remote_estimate(sql.data, conn, &rows, &width,
-							&startup_cost, &total_cost);
-		ReleaseConnection(conn);
-#endif
+		/* KITE */
+		rows = 0;
+		width = 0;
+		startup_cost = 0;
+		total_cost = 0;
+		/* END KITE */
 
 		retrieved_rows = rows;
 
@@ -1923,51 +1579,6 @@ estimate_path_cost_size(PlannerInfo *root,
 	*p_total_cost = total_cost;
 }
 
-/*
- * Estimate costs of executing a SQL statement remotely.
- * The given "sql" must be an EXPLAIN command.
- */
-static void
-get_remote_estimate(const char *sql, PGconn *conn,
-					double *rows, int *width,
-					Cost *startup_cost, Cost *total_cost)
-{
-	PGresult   *volatile res = NULL;
-
-	/* PGresult must be released before leaving this function. */
-	PG_TRY();
-	{
-		char	   *line;
-		char	   *p;
-		int			n;
-
-		/*
-		 * Execute EXPLAIN remotely.
-		 */
-		res = pgfdw_exec_query(conn, sql, NULL);
-		if (PQresultStatus(res) != PGRES_TUPLES_OK)
-			pgfdw_report_error(ERROR, res, conn, false, sql);
-
-		/*
-		 * Extract cost numbers for topmost plan node.  Note we search for a
-		 * left paren from the end of the line to avoid being confused by
-		 * other uses of parentheses.
-		 */
-		line = PQgetvalue(res, 0, 0);
-		p = strrchr(line, '(');
-		if (p == NULL)
-			elog(ERROR, "could not interpret EXPLAIN output: \"%s\"", line);
-		n = sscanf(p, "(cost=%lf..%lf rows=%lf width=%d)",
-				   startup_cost, total_cost, rows, width);
-		if (n != 4)
-			elog(ERROR, "could not interpret EXPLAIN output: \"%s\"", line);
-	}
-	PG_FINALLY();
-	{
-		PQclear(res);
-	}
-	PG_END_TRY();
-}
 
 /*
  * Adjust the cost estimates of a foreign grouping path to include the cost of
@@ -2032,22 +1643,9 @@ create_cursor(ForeignScanState *node)
 	ExprContext *econtext = node->ss.ps.ps_ExprContext;
 	int			numParams = fsstate->numParams;
 	const char **values = fsstate->param_values;
-#ifdef KITE_CONNECT
 	kite_request_t *req = fsstate->req;
 	char errmsg[1024];
 
-#else
-	PGconn	   *conn = fsstate->conn;
-	StringInfoData buf;
-	PGresult   *res;
-#endif
-
-#if 0
-	/* First, process a pending asynchronous request, if any. */
-	if (fsstate->conn_state->pendingAreq)
-		process_pending_request(fsstate->conn_state->pendingAreq);
-
-#endif
 	/*
 	 * Construct array of query parameter values in text format.  We do the
 	 * conversions in the short-lived per-tuple context, so as not to cause a
@@ -2067,8 +1665,6 @@ create_cursor(ForeignScanState *node)
 		MemoryContextSwitchTo(oldcontext);
 	}
 
-#ifdef KITE_CONNECT
-
 	/* TODO: kite_submit */
 	req->hdl = kite_submit(req->host, fsstate->schema, fsstate->query, -1, req->fragcnt, errmsg, sizeof(errmsg));
 	if (! req->hdl) {
@@ -2084,47 +1680,6 @@ create_cursor(ForeignScanState *node)
 	fsstate->fetch_ct_2 = 0;
 	fsstate->eof_reached = false;
 	
-
-#else
-	/* Construct the DECLARE CURSOR command */
-	initStringInfo(&buf);
-	appendStringInfo(&buf, "DECLARE c%u CURSOR FOR\n%s",
-					 fsstate->cursor_number, fsstate->query);
-
-	/*
-	 * Notice that we pass NULL for paramTypes, thus forcing the remote server
-	 * to infer types for all parameters.  Since we explicitly cast every
-	 * parameter (see deparse.c), the "inference" is trivial and will produce
-	 * the desired result.  This allows us to avoid assuming that the remote
-	 * server has the same OIDs we do for the parameters' types.
-	 */
-	if (!PQsendQueryParams(conn, buf.data, numParams,
-						   NULL, values, NULL, NULL, 0))
-		pgfdw_report_error(ERROR, NULL, conn, false, buf.data);
-
-	/*
-	 * Get the result, and check for success.
-	 *
-	 * We don't use a PG_TRY block here, so be careful not to throw error
-	 * without releasing the PGresult.
-	 */
-	res = pgfdw_get_result(conn, buf.data);
-	if (PQresultStatus(res) != PGRES_COMMAND_OK)
-		pgfdw_report_error(ERROR, res, conn, true, fsstate->query);
-	PQclear(res);
-
-	/* Mark the cursor as created, and show no tuples have been retrieved */
-	fsstate->cursor_exists = true;
-	fsstate->tuples = NULL;
-	fsstate->num_tuples = 0;
-	fsstate->next_tuple = 0;
-	fsstate->fetch_ct_2 = 0;
-	fsstate->eof_reached = false;
-
-	/* Clean up */
-	pfree(buf.data);
-#endif
-
 }
 
 /*
@@ -2134,11 +1689,7 @@ static void
 fetch_more_data(ForeignScanState *node)
 {
 	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
-#ifdef KITE_CONNECT
 	char errmsg[1024];
-#else
-	PGresult   *volatile res = NULL;
-#endif
 	MemoryContext oldcontext;
 
 	/*
@@ -2149,7 +1700,6 @@ fetch_more_data(ForeignScanState *node)
 	MemoryContextReset(fsstate->batch_cxt);
 	oldcontext = MemoryContextSwitchTo(fsstate->batch_cxt);
 
-#ifdef KITE_CONNECT
 	PG_TRY();
 	{
 		kite_handle_t *hdl = fsstate->req->hdl;
@@ -2234,77 +1784,6 @@ fetch_more_data(ForeignScanState *node)
         }
         PG_END_TRY();
 
-#else 
-	/* PGresult must be released before leaving this function. */
-	PG_TRY();
-	{
-		PGconn	   *conn = fsstate->conn;
-		int			numrows;
-		int			i;
-
-		if (fsstate->async_capable)
-		{
-			Assert(fsstate->conn_state->pendingAreq);
-
-			/*
-			 * The query was already sent by an earlier call to
-			 * fetch_more_data_begin.  So now we just fetch the result.
-			 */
-			res = pgfdw_get_result(conn, fsstate->query);
-			/* On error, report the original query, not the FETCH. */
-			if (PQresultStatus(res) != PGRES_TUPLES_OK)
-				pgfdw_report_error(ERROR, res, conn, false, fsstate->query);
-
-			/* Reset per-connection state */
-			fsstate->conn_state->pendingAreq = NULL;
-		}
-		else
-		{
-			char		sql[64];
-
-			/* This is a regular synchronous fetch. */
-			snprintf(sql, sizeof(sql), "FETCH %d FROM c%u",
-					 fsstate->fetch_size, fsstate->cursor_number);
-
-			res = pgfdw_exec_query(conn, sql, fsstate->conn_state);
-			/* On error, report the original query, not the FETCH. */
-			if (PQresultStatus(res) != PGRES_TUPLES_OK)
-				pgfdw_report_error(ERROR, res, conn, false, fsstate->query);
-		}
-
-		/* Convert the data into HeapTuples */
-		numrows = PQntuples(res);
-		fsstate->tuples = (HeapTuple *) palloc0(numrows * sizeof(HeapTuple));
-		fsstate->num_tuples = numrows;
-		fsstate->next_tuple = 0;
-
-		for (i = 0; i < numrows; i++)
-		{
-			Assert(IsA(node->ss.ps.plan, ForeignScan));
-
-			fsstate->tuples[i] =
-				make_tuple_from_result_row(res, i,
-										   fsstate->rel,
-										   fsstate->attinmeta,
-										   fsstate->retrieved_attrs,
-										   node,
-										   fsstate->temp_cxt);
-		}
-
-		/* Update fetch_ct_2 */
-		if (fsstate->fetch_ct_2 < 2)
-			fsstate->fetch_ct_2++;
-
-		/* Must be EOF if we didn't get as many tuples as we asked for. */
-		fsstate->eof_reached = (numrows < fsstate->fetch_size);
-	}
-	PG_FINALLY();
-	{
-		PQclear(res);
-	}
-	PG_END_TRY();
-#endif
-
 	MemoryContextSwitchTo(oldcontext);
 }
 
@@ -2365,29 +1844,6 @@ reset_transmission_modes(int nestlevel)
 {
 	AtEOXact_GUC(true, nestlevel);
 }
-
-/*
- * Utility routine to close a cursor.
- */
-static void
-close_cursor(PGconn *conn, unsigned int cursor_number,
-			 PgFdwConnState *conn_state)
-{
-	char		sql[64];
-	PGresult   *res;
-
-	snprintf(sql, sizeof(sql), "CLOSE c%u", cursor_number);
-
-	/*
-	 * We don't use a PG_TRY block here, so be careful not to throw error
-	 * without releasing the PGresult.
-	 */
-	res = pgfdw_exec_query(conn, sql, conn_state);
-	if (PQresultStatus(res) != PGRES_COMMAND_OK)
-		pgfdw_report_error(ERROR, res, conn, true, sql);
-	PQclear(res);
-}
-
 
 /*
  * Prepare for processing of parameters used in remote query.
@@ -2473,314 +1929,6 @@ process_query_params(ExprContext *econtext,
 
 	reset_transmission_modes(nestlevel);
 }
-
-#if 0
-/*
- * postgresAnalyzeForeignTable
- *		Test whether analyzing this foreign table is supported
- */
-static bool
-postgresAnalyzeForeignTable(Relation relation,
-							AcquireSampleRowsFunc *func,
-							BlockNumber *totalpages)
-{
-	ForeignTable *table;
-	UserMapping *user;
-	PGconn	   *conn;
-	StringInfoData sql;
-	PGresult   *volatile res = NULL;
-
-	/* Return the row-analysis function pointer */
-	*func = postgresAcquireSampleRowsFunc;
-
-	/*
-	 * Now we have to get the number of pages.  It's annoying that the ANALYZE
-	 * API requires us to return that now, because it forces some duplication
-	 * of effort between this routine and postgresAcquireSampleRowsFunc.  But
-	 * it's probably not worth redefining that API at this point.
-	 */
-
-	/*
-	 * Get the connection to use.  We do the remote access as the table's
-	 * owner, even if the ANALYZE was started by some other user.
-	 */
-	table = GetForeignTable(RelationGetRelid(relation));
-	user = GetUserMapping(relation->rd_rel->relowner, table->serverid);
-	conn = GetConnection(user, false, NULL);
-
-	/*
-	 * Construct command to get page count for relation.
-	 */
-	initStringInfo(&sql);
-	deparseAnalyzeSizeSql(&sql, relation);
-
-	/* In what follows, do not risk leaking any PGresults. */
-	PG_TRY();
-	{
-		res = pgfdw_exec_query(conn, sql.data, NULL);
-		if (PQresultStatus(res) != PGRES_TUPLES_OK)
-			pgfdw_report_error(ERROR, res, conn, false, sql.data);
-
-		if (PQntuples(res) != 1 || PQnfields(res) != 1)
-			elog(ERROR, "unexpected result from deparseAnalyzeSizeSql query");
-		*totalpages = strtoul(PQgetvalue(res, 0, 0), NULL, 10);
-	}
-	PG_FINALLY();
-	{
-		PQclear(res);
-	}
-	PG_END_TRY();
-
-	ReleaseConnection(conn);
-
-	return true;
-}
-#endif
-
-
-#if 0
-/*
- * Acquire a random sample of rows from foreign table managed by postgres_fdw.
- *
- * We fetch the whole table from the remote side and pick out some sample rows.
- *
- * Selected rows are returned in the caller-allocated array rows[],
- * which must have at least targrows entries.
- * The actual number of rows selected is returned as the function result.
- * We also count the total number of rows in the table and return it into
- * *totalrows.  Note that *totaldeadrows is always set to 0.
- *
- * Note that the returned list of rows is not always in order by physical
- * position in the table.  Therefore, correlation estimates derived later
- * may be meaningless, but it's OK because we don't use the estimates
- * currently (the planner only pays attention to correlation for indexscans).
- */
-static int
-postgresAcquireSampleRowsFunc(Relation relation, int elevel,
-							  HeapTuple *rows, int targrows,
-							  double *totalrows,
-							  double *totaldeadrows)
-{
-	PgFdwAnalyzeState astate;
-	ForeignTable *table;
-	ForeignServer *server;
-	UserMapping *user;
-	PGconn	   *conn;
-	unsigned int cursor_number;
-	StringInfoData sql;
-	PGresult   *volatile res = NULL;
-
-	/* Initialize workspace state */
-	astate.rel = relation;
-	astate.attinmeta = TupleDescGetAttInMetadata(RelationGetDescr(relation));
-
-	astate.rows = rows;
-	astate.targrows = targrows;
-	astate.numrows = 0;
-	astate.samplerows = 0;
-	astate.rowstoskip = -1;		/* -1 means not set yet */
-	reservoir_init_selection_state(&astate.rstate, targrows);
-
-	/* Remember ANALYZE context, and create a per-tuple temp context */
-	astate.anl_cxt = CurrentMemoryContext;
-	astate.temp_cxt = AllocSetContextCreate(CurrentMemoryContext,
-											"postgres_fdw temporary data",
-											ALLOCSET_SMALL_SIZES);
-
-	/*
-	 * Get the connection to use.  We do the remote access as the table's
-	 * owner, even if the ANALYZE was started by some other user.
-	 */
-	table = GetForeignTable(RelationGetRelid(relation));
-	server = GetForeignServer(table->serverid);
-	user = GetUserMapping(relation->rd_rel->relowner, table->serverid);
-	conn = GetConnection(user, false, NULL);
-
-	/*
-	 * Construct cursor that retrieves whole rows from remote.
-	 */
-	cursor_number = GetCursorNumber(conn);
-	initStringInfo(&sql);
-	appendStringInfo(&sql, "DECLARE c%u CURSOR FOR ", cursor_number);
-	deparseAnalyzeSql(&sql, relation, &astate.retrieved_attrs);
-
-	/* In what follows, do not risk leaking any PGresults. */
-	PG_TRY();
-	{
-		char		fetch_sql[64];
-		int			fetch_size;
-		ListCell   *lc;
-
-		res = pgfdw_exec_query(conn, sql.data, NULL);
-		if (PQresultStatus(res) != PGRES_COMMAND_OK)
-			pgfdw_report_error(ERROR, res, conn, false, sql.data);
-		PQclear(res);
-		res = NULL;
-
-		/*
-		 * Determine the fetch size.  The default is arbitrary, but shouldn't
-		 * be enormous.
-		 */
-		fetch_size = 100;
-		foreach(lc, server->options)
-		{
-			DefElem    *def = (DefElem *) lfirst(lc);
-
-			if (strcmp(def->defname, "fetch_size") == 0)
-			{
-				(void) parse_int(defGetString(def), &fetch_size, 0, NULL);
-				break;
-			}
-		}
-		foreach(lc, table->options)
-		{
-			DefElem    *def = (DefElem *) lfirst(lc);
-
-			if (strcmp(def->defname, "fetch_size") == 0)
-			{
-				(void) parse_int(defGetString(def), &fetch_size, 0, NULL);
-				break;
-			}
-		}
-
-		/* Construct command to fetch rows from remote. */
-		snprintf(fetch_sql, sizeof(fetch_sql), "FETCH %d FROM c%u",
-				 fetch_size, cursor_number);
-
-		/* Retrieve and process rows a batch at a time. */
-		for (;;)
-		{
-			int			numrows;
-			int			i;
-
-			/* Allow users to cancel long query */
-			CHECK_FOR_INTERRUPTS();
-
-			/*
-			 * XXX possible future improvement: if rowstoskip is large, we
-			 * could issue a MOVE rather than physically fetching the rows,
-			 * then just adjust rowstoskip and samplerows appropriately.
-			 */
-
-			/* Fetch some rows */
-			res = pgfdw_exec_query(conn, fetch_sql, NULL);
-			/* On error, report the original query, not the FETCH. */
-			if (PQresultStatus(res) != PGRES_TUPLES_OK)
-				pgfdw_report_error(ERROR, res, conn, false, sql.data);
-
-			/* Process whatever we got. */
-			numrows = PQntuples(res);
-			for (i = 0; i < numrows; i++)
-				analyze_row_processor(res, i, &astate);
-
-			PQclear(res);
-			res = NULL;
-
-			/* Must be EOF if we didn't get all the rows requested. */
-			if (numrows < fetch_size)
-				break;
-		}
-
-		/* Close the cursor, just to be tidy. */
-		close_cursor(conn, cursor_number, NULL);
-	}
-	PG_CATCH();
-	{
-		PQclear(res);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-
-	ReleaseConnection(conn);
-
-	/* We assume that we have no dead tuple. */
-	*totaldeadrows = 0.0;
-
-	/* We've retrieved all living tuples from foreign server. */
-	*totalrows = astate.samplerows;
-
-	/*
-	 * Emit some interesting relation info
-	 */
-	ereport(elevel,
-			(errmsg("\"%s\": table contains %.0f rows, %d rows in sample",
-					RelationGetRelationName(relation),
-					astate.samplerows, astate.numrows)));
-
-	return astate.numrows;
-}
-#endif
-
-#if 0
-/*
- * Collect sample rows from the result of query.
- *	 - Use all tuples in sample until target # of samples are collected.
- *	 - Subsequently, replace already-sampled tuples randomly.
- */
-static void
-analyze_row_processor(PGresult *res, int row, PgFdwAnalyzeState *astate)
-{
-	int			targrows = astate->targrows;
-	int			pos;			/* array index to store tuple in */
-	MemoryContext oldcontext;
-
-	/* Always increment sample row counter. */
-	astate->samplerows += 1;
-
-	/*
-	 * Determine the slot where this sample row should be stored.  Set pos to
-	 * negative value to indicate the row should be skipped.
-	 */
-	if (astate->numrows < targrows)
-	{
-		/* First targrows rows are always included into the sample */
-		pos = astate->numrows++;
-	}
-	else
-	{
-		/*
-		 * Now we start replacing tuples in the sample until we reach the end
-		 * of the relation.  Same algorithm as in acquire_sample_rows in
-		 * analyze.c; see Jeff Vitter's paper.
-		 */
-		if (astate->rowstoskip < 0)
-			astate->rowstoskip = reservoir_get_next_S(&astate->rstate, astate->samplerows, targrows);
-
-		if (astate->rowstoskip <= 0)
-		{
-			/* Choose a random reservoir element to replace. */
-			pos = (int) (targrows * sampler_random_fract(&astate->rstate.randstate));
-			Assert(pos >= 0 && pos < targrows);
-			heap_freetuple(astate->rows[pos]);
-		}
-		else
-		{
-			/* Skip this tuple. */
-			pos = -1;
-		}
-
-		astate->rowstoskip -= 1;
-	}
-
-	if (pos >= 0)
-	{
-		/*
-		 * Create sample tuple from current result row, and store it in the
-		 * position determined above.  The tuple has to be created in anl_cxt.
-		 */
-		oldcontext = MemoryContextSwitchTo(astate->anl_cxt);
-
-		astate->rows[pos] = make_tuple_from_result_row(res, row,
-													   astate->rel,
-													   astate->attinmeta,
-													   astate->retrieved_attrs,
-													   NULL,
-													   astate->temp_cxt);
-
-		MemoryContextSwitchTo(oldcontext);
-	}
-}
-#endif
 
 /*
  * Parse options from foreign server and apply them to fpinfo.
@@ -3153,7 +2301,6 @@ postgresGetForeignUpperPaths(PlannerInfo *root, UpperRelationKind stage,
 {
 	PgFdwRelationInfo *fpinfo;
 
-	elog(LOG, "postgresGetForeignUpperPaths");
 	/*
 	 * If input rel is not safe to pushdown, then simply return as we cannot
 	 * perform any post-join operations on the foreign server.
@@ -3177,12 +2324,10 @@ postgresGetForeignUpperPaths(PlannerInfo *root, UpperRelationKind stage,
 	switch (stage)
 	{
 		case UPPERREL_GROUP_AGG:
-			elog(LOG, "GROUP_AGG");
 			add_foreign_grouping_paths(root, input_rel, output_rel,
 									   (GroupPathExtraData *) extra);
 			break;
 		case UPPERREL_FINAL:
-			elog(LOG, "FINAL");
 			add_foreign_final_paths(root, input_rel, output_rel,
 									(FinalPathExtraData *) extra);
 			break;
@@ -3518,313 +2663,6 @@ add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 	add_path(final_rel, (Path *) final_path);
 }
 
-#if 0
-/*
- * postgresIsForeignPathAsyncCapable
- *		Check whether a given ForeignPath node is async-capable.
- */
-static bool
-postgresIsForeignPathAsyncCapable(ForeignPath *path)
-{
-	RelOptInfo *rel = ((Path *) path)->parent;
-	PgFdwRelationInfo *fpinfo = (PgFdwRelationInfo *) rel->fdw_private;
-
-	return fpinfo->async_capable;
-}
-#endif
-
-#if 0
-/*
- * postgresForeignAsyncRequest
- *		Asynchronously request next tuple from a foreign PostgreSQL table.
- */
-static void
-postgresForeignAsyncRequest(AsyncRequest *areq)
-{
-	produce_tuple_asynchronously(areq, true);
-}
-#endif
-
-#if 0
-/*
- * postgresForeignAsyncConfigureWait
- *		Configure a file descriptor event for which we wish to wait.
- */
-static void
-postgresForeignAsyncConfigureWait(AsyncRequest *areq)
-{
-	ForeignScanState *node = (ForeignScanState *) areq->requestee;
-	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
-	AsyncRequest *pendingAreq = fsstate->conn_state->pendingAreq;
-	AppendState *requestor = (AppendState *) areq->requestor;
-	WaitEventSet *set = requestor->as_eventset;
-
-	/* This should not be called unless callback_pending */
-	Assert(areq->callback_pending);
-
-	/*
-	 * If process_pending_request() has been invoked on the given request
-	 * before we get here, we might have some tuples already; in which case
-	 * complete the request
-	 */
-	if (fsstate->next_tuple < fsstate->num_tuples)
-	{
-		complete_pending_request(areq);
-		if (areq->request_complete)
-			return;
-		Assert(areq->callback_pending);
-	}
-
-	/* We must have run out of tuples */
-	Assert(fsstate->next_tuple >= fsstate->num_tuples);
-
-	/* The core code would have registered postmaster death event */
-	Assert(GetNumRegisteredWaitEvents(set) >= 1);
-
-	/* Begin an asynchronous data fetch if not already done */
-	if (!pendingAreq)
-		fetch_more_data_begin(areq);
-	else if (pendingAreq->requestor != areq->requestor)
-	{
-		/*
-		 * This is the case when the in-process request was made by another
-		 * Append.  Note that it might be useless to process the request,
-		 * because the query might not need tuples from that Append anymore.
-		 * If there are any child subplans of the same parent that are ready
-		 * for new requests, skip the given request.  Likewise, if there are
-		 * any configured events other than the postmaster death event, skip
-		 * it.  Otherwise, process the in-process request, then begin a fetch
-		 * to configure the event below, because we might otherwise end up
-		 * with no configured events other than the postmaster death event.
-		 */
-		if (!bms_is_empty(requestor->as_needrequest))
-			return;
-		if (GetNumRegisteredWaitEvents(set) > 1)
-			return;
-		process_pending_request(pendingAreq);
-		fetch_more_data_begin(areq);
-	}
-	else if (pendingAreq->requestee != areq->requestee)
-	{
-		/*
-		 * This is the case when the in-process request was made by the same
-		 * parent but for a different child.  Since we configure only the
-		 * event for the request made for that child, skip the given request.
-		 */
-		return;
-	}
-	else
-		Assert(pendingAreq == areq);
-
-	AddWaitEventToSet(set, WL_SOCKET_READABLE, PQsocket(fsstate->conn),
-					  NULL, areq);
-}
-#endif
-
-
-#if 0
-/*
- * postgresForeignAsyncNotify
- *		Fetch some more tuples from a file descriptor that becomes ready,
- *		requesting next tuple.
- */
-static void
-postgresForeignAsyncNotify(AsyncRequest *areq)
-{
-	ForeignScanState *node = (ForeignScanState *) areq->requestee;
-	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
-
-	/* The core code would have initialized the callback_pending flag */
-	Assert(!areq->callback_pending);
-
-	/*
-	 * If process_pending_request() has been invoked on the given request
-	 * before we get here, we might have some tuples already; in which case
-	 * produce the next tuple
-	 */
-	if (fsstate->next_tuple < fsstate->num_tuples)
-	{
-		produce_tuple_asynchronously(areq, true);
-		return;
-	}
-
-	/* We must have run out of tuples */
-	Assert(fsstate->next_tuple >= fsstate->num_tuples);
-
-	/* The request should be currently in-process */
-	Assert(fsstate->conn_state->pendingAreq == areq);
-
-	/* On error, report the original query, not the FETCH. */
-	if (!PQconsumeInput(fsstate->conn))
-		pgfdw_report_error(ERROR, NULL, fsstate->conn, false, fsstate->query);
-
-	fetch_more_data(node);
-
-	produce_tuple_asynchronously(areq, true);
-}
-#endif
-
-#if 0
-/*
- * Asynchronously produce next tuple from a foreign PostgreSQL table.
- */
-static void
-produce_tuple_asynchronously(AsyncRequest *areq, bool fetch)
-{
-	ForeignScanState *node = (ForeignScanState *) areq->requestee;
-	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
-	AsyncRequest *pendingAreq = fsstate->conn_state->pendingAreq;
-	TupleTableSlot *result;
-
-	/* This should not be called if the request is currently in-process */
-	Assert(areq != pendingAreq);
-
-	/* Fetch some more tuples, if we've run out */
-	if (fsstate->next_tuple >= fsstate->num_tuples)
-	{
-		/* No point in another fetch if we already detected EOF, though */
-		if (!fsstate->eof_reached)
-		{
-			/* Mark the request as pending for a callback */
-			ExecAsyncRequestPending(areq);
-			/* Begin another fetch if requested and if no pending request */
-			if (fetch && !pendingAreq)
-				fetch_more_data_begin(areq);
-		}
-		else
-		{
-			/* There's nothing more to do; just return a NULL pointer */
-			result = NULL;
-			/* Mark the request as complete */
-			ExecAsyncRequestDone(areq, result);
-		}
-		return;
-	}
-
-	/* Get a tuple from the ForeignScan node */
-	result = areq->requestee->ExecProcNodeReal(areq->requestee);
-	if (!TupIsNull(result))
-	{
-		/* Mark the request as complete */
-		ExecAsyncRequestDone(areq, result);
-		return;
-	}
-
-	/* We must have run out of tuples */
-	Assert(fsstate->next_tuple >= fsstate->num_tuples);
-
-	/* Fetch some more tuples, if we've not detected EOF yet */
-	if (!fsstate->eof_reached)
-	{
-		/* Mark the request as pending for a callback */
-		ExecAsyncRequestPending(areq);
-		/* Begin another fetch if requested and if no pending request */
-		if (fetch && !pendingAreq)
-			fetch_more_data_begin(areq);
-	}
-	else
-	{
-		/* There's nothing more to do; just return a NULL pointer */
-		result = NULL;
-		/* Mark the request as complete */
-		ExecAsyncRequestDone(areq, result);
-	}
-}
-#endif
-
-#if 0
-/*
- * Begin an asynchronous data fetch.
- *
- * Note: this function assumes there is no currently-in-progress asynchronous
- * data fetch.
- *
- * Note: fetch_more_data must be called to fetch the result.
- */
-static void
-fetch_more_data_begin(AsyncRequest *areq)
-{
-	ForeignScanState *node = (ForeignScanState *) areq->requestee;
-	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
-	char		sql[64];
-
-	Assert(!fsstate->conn_state->pendingAreq);
-
-	/* Create the cursor synchronously. */
-	if (!fsstate->cursor_exists)
-		create_cursor(node);
-
-	/* We will send this query, but not wait for the response. */
-	snprintf(sql, sizeof(sql), "FETCH %d FROM c%u",
-			 fsstate->fetch_size, fsstate->cursor_number);
-
-	if (!PQsendQuery(fsstate->conn, sql))
-		pgfdw_report_error(ERROR, NULL, fsstate->conn, false, fsstate->query);
-
-	/* Remember that the request is in process */
-	fsstate->conn_state->pendingAreq = areq;
-}
-#endif
-
-/*
- * Process a pending asynchronous request.
- */
-void
-process_pending_request(AsyncRequest *areq)
-{
-	ForeignScanState *node = (ForeignScanState *) areq->requestee;
-	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
-
-	/* The request would have been pending for a callback */
-	Assert(areq->callback_pending);
-
-	/* The request should be currently in-process */
-	Assert(fsstate->conn_state->pendingAreq == areq);
-
-	fetch_more_data(node);
-
-	/*
-	 * If we didn't get any tuples, must be end of data; complete the request
-	 * now.  Otherwise, we postpone completing the request until we are called
-	 * from postgresForeignAsyncConfigureWait()/postgresForeignAsyncNotify().
-	 */
-	if (fsstate->next_tuple >= fsstate->num_tuples)
-	{
-		/* Unlike AsyncNotify, we unset callback_pending ourselves */
-		areq->callback_pending = false;
-		/* Mark the request as complete */
-		ExecAsyncRequestDone(areq, NULL);
-		/* Unlike AsyncNotify, we call ExecAsyncResponse ourselves */
-		ExecAsyncResponse(areq);
-	}
-}
-
-#if 0
-/*
- * Complete a pending asynchronous request.
- */
-static void
-complete_pending_request(AsyncRequest *areq)
-{
-	/* The request would have been pending for a callback */
-	Assert(areq->callback_pending);
-
-	/* Unlike AsyncNotify, we unset callback_pending ourselves */
-	areq->callback_pending = false;
-
-	/* We begin a fetch afterwards if necessary; don't fetch */
-	produce_tuple_asynchronously(areq, false);
-
-	/* Unlike AsyncNotify, we call ExecAsyncResponse ourselves */
-	ExecAsyncResponse(areq);
-
-	/* Also, we do instrumentation ourselves, if required */
-	if (areq->requestee->instrument)
-		InstrUpdateTupleCount(areq->requestee->instrument,
-							  TupIsNull(areq->result) ? 0.0 : 1.0);
-}
-#endif
-
 /*
  * Create a tuple from the specified row of the PGresult.
  *
@@ -3838,7 +2676,6 @@ complete_pending_request(AsyncRequest *areq)
  * if we're processing a remote join, while fsstate is NULL in a non-query
  * context such as ANALYZE, or if we're processing a non-scan query node.
  */
-#ifdef KITE_CONNECT
 static HeapTuple
 make_tuple_from_agg(xrg_agg_t *agg,
 		int row,
@@ -4042,157 +2879,6 @@ make_tuple_from_result_row(xrg_iter_t *iter,
 	return tuple;
 }
 
-
-#else
-static HeapTuple
-make_tuple_from_result_row(PGresult *res,
-						   int row,
-						   Relation rel,
-						   AttInMetadata *attinmeta,
-						   List *retrieved_attrs,
-						   ForeignScanState *fsstate,
-						   MemoryContext temp_context)
-{
-	HeapTuple	tuple;
-	TupleDesc	tupdesc;
-	Datum	   *values;
-	bool	   *nulls;
-	ItemPointer ctid = NULL;
-	ConversionLocation errpos;
-	ErrorContextCallback errcallback;
-	MemoryContext oldcontext;
-	ListCell   *lc;
-	int			j;
-
-	Assert(row < PQntuples(res));
-
-	/*
-	 * Do the following work in a temp context that we reset after each tuple.
-	 * This cleans up not only the data we have direct access to, but any
-	 * cruft the I/O functions might leak.
-	 */
-	oldcontext = MemoryContextSwitchTo(temp_context);
-
-	/*
-	 * Get the tuple descriptor for the row.  Use the rel's tupdesc if rel is
-	 * provided, otherwise look to the scan node's ScanTupleSlot.
-	 */
-	if (rel)
-		tupdesc = RelationGetDescr(rel);
-	else
-	{
-		Assert(fsstate);
-		tupdesc = fsstate->ss.ss_ScanTupleSlot->tts_tupleDescriptor;
-	}
-
-	values = (Datum *) palloc0(tupdesc->natts * sizeof(Datum));
-	nulls = (bool *) palloc(tupdesc->natts * sizeof(bool));
-	/* Initialize to nulls for any columns not present in result */
-	memset(nulls, true, tupdesc->natts * sizeof(bool));
-
-	/*
-	 * Set up and install callback to report where conversion error occurs.
-	 */
-	errpos.cur_attno = 0;
-	errpos.rel = rel;
-	errpos.fsstate = fsstate;
-	errcallback.callback = conversion_error_callback;
-	errcallback.arg = (void *) &errpos;
-	errcallback.previous = error_context_stack;
-	error_context_stack = &errcallback;
-
-	/*
-	 * i indexes columns in the relation, j indexes columns in the PGresult.
-	 */
-	j = 0;
-	foreach(lc, retrieved_attrs)
-	{
-		int			i = lfirst_int(lc);
-		char	   *valstr;
-
-		/* fetch next column's textual value */
-		if (PQgetisnull(res, row, j))
-			valstr = NULL;
-		else
-			valstr = PQgetvalue(res, row, j);
-
-		/*
-		 * convert value to internal representation
-		 *
-		 * Note: we ignore system columns other than ctid and oid in result
-		 */
-		errpos.cur_attno = i;
-		if (i > 0)
-		{
-			/* ordinary column */
-			Assert(i <= tupdesc->natts);
-			nulls[i - 1] = (valstr == NULL);
-			/* Apply the input function even to nulls, to support domains */
-			values[i - 1] = InputFunctionCall(&attinmeta->attinfuncs[i - 1],
-											  valstr,
-											  attinmeta->attioparams[i - 1],
-											  attinmeta->atttypmods[i - 1]);
-		}
-		else if (i == SelfItemPointerAttributeNumber)
-		{
-			/* ctid */
-			if (valstr != NULL)
-			{
-				Datum		datum;
-
-				datum = DirectFunctionCall1(tidin, CStringGetDatum(valstr));
-				ctid = (ItemPointer) DatumGetPointer(datum);
-			}
-		}
-		errpos.cur_attno = 0;
-
-		j++;
-	}
-
-	/* Uninstall error context callback. */
-	error_context_stack = errcallback.previous;
-
-	/*
-	 * Check we got the expected number of columns.  Note: j == 0 and
-	 * PQnfields == 1 is expected, since deparse emits a NULL if no columns.
-	 */
-	if (j > 0 && j != PQnfields(res))
-		elog(ERROR, "remote query result does not match the foreign table");
-
-	/*
-	 * Build the result tuple in caller's memory context.
-	 */
-	MemoryContextSwitchTo(oldcontext);
-
-	tuple = heap_form_tuple(tupdesc, values, nulls);
-
-	/*
-	 * If we have a CTID to return, install it in both t_self and t_ctid.
-	 * t_self is the normal place, but if the tuple is converted to a
-	 * composite Datum, t_self will be lost; setting t_ctid allows CTID to be
-	 * preserved during EvalPlanQual re-evaluations (see ROW_MARK_COPY code).
-	 */
-	if (ctid)
-		tuple->t_self = tuple->t_data->t_ctid = *ctid;
-
-	/*
-	 * Stomp on the xmin, xmax, and cmin fields from the tuple created by
-	 * heap_form_tuple.  heap_form_tuple actually creates the tuple with
-	 * DatumTupleFields, not HeapTupleFields, but the executor expects
-	 * HeapTupleFields and will happily extract system columns on that
-	 * assumption.  If we don't do this then, for example, the tuple length
-	 * ends up in the xmin field, which isn't what we want.
-	 */
-	HeapTupleHeaderSetXmax(tuple->t_data, InvalidTransactionId);
-	HeapTupleHeaderSetXmin(tuple->t_data, InvalidTransactionId);
-	HeapTupleHeaderSetCmin(tuple->t_data, InvalidTransactionId);
-
-	/* Clean up */
-	MemoryContextReset(temp_context);
-
-	return tuple;
-}
-#endif
 
 /*
  * Callback function which is called when error occurs during column value
