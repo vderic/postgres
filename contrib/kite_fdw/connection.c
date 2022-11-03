@@ -37,6 +37,19 @@ PG_FUNCTION_INFO_V1(kite_fdw_get_connections);
 PG_FUNCTION_INFO_V1(kite_fdw_disconnect);
 PG_FUNCTION_INFO_V1(kite_fdw_disconnect_all);
 
+/*
+ * List active foreign server connections.
+ *
+ * This function takes no input parameter and returns setof record made of
+ * following values:
+ * - server_name - server name of active connection. In case the foreign server
+ *   is dropped but still the connection is active, then the server name will
+ *   be NULL in output.
+ * - valid - true/false representing whether the connection is valid or not.
+ * 	 Note that the connections can get invalidated in pgfdw_inval_callback.
+ *
+ * No records are returned when there are no cached connections at all.
+ */
 Datum kite_fdw_get_connections(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_VOID();
