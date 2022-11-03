@@ -1708,7 +1708,6 @@ fetch_more_data(ForeignScanState *node)
 
 		if (fsstate->agg) {
 			int batchsz = fsstate->fetch_size;
-			elog(LOG, "fetchsz = %d", fsstate->fetch_size);
 
 			xrg_agg_fetch(fsstate->agg, hdl);
 
