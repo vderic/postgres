@@ -952,13 +952,14 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	numParams = list_length(fsplan->fdw_exprs);
 	fsstate->numParams = numParams;
 
+#if 1	
 	/* KITE */
 	if (numParams > 0) {
 		elog(ERROR, "Statement with muiltple parameters not supported");
 	}
 	/* END KITE */
+#else
 
-#if 0	
 	if (numParams > 0)
 		prepare_query_params((PlanState *) node,
 							 fsplan->fdw_exprs,
@@ -1672,7 +1673,7 @@ create_cursor(ForeignScanState *node)
 		MemoryContextSwitchTo(oldcontext);
 	}
 
-	/* TODO: kite_submit */
+	/* kite_submit */
 	req->hdl = kite_submit(req->host, fsstate->schema, fsstate->query, -1, fsstate->fragcnt, errmsg, sizeof(errmsg));
 	if (! req->hdl) {
 		elog(ERROR, "kite_submit failed");
