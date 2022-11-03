@@ -23,7 +23,6 @@
 
 typedef struct kite_request_t {
 	char *host;
-	int fragcnt;
 	kite_handle_t *hdl;
 } kite_request_t;
 
@@ -94,6 +93,8 @@ typedef struct PgFdwRelationInfo
 	UserMapping *user;			/* only set in use_remote_estimate mode */
 
 	int			fetch_size;		/* fetch size for this remote table */
+
+	int                     fragcnt; /* number of fragment in kite */
 
 	/*
 	 * Name of the relation, for use while EXPLAINing ForeignScan.  It is used

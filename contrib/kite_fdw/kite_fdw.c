@@ -85,6 +85,8 @@ enum FdwScanPrivateIndex
 	FdwScanPrivateRetrievedAttrs,
 	/* Integer representing the desired fetch_size */
 	FdwScanPrivateFetchSize,
+	/* Integer represeting the number of fragment in kite */
+	FdwScanPrivateFragCnt,
 
 	/*
 	 * String describing join i.e. names of relations being joined and types
@@ -147,6 +149,7 @@ typedef struct PgFdwScanState
 	MemoryContext temp_cxt;		/* context for per-tuple temporary data */
 
 	int			fetch_size;		/* number of tuples per fetch */
+	int                     fragcnt;   /* number of fragment in kite */
 } PgFdwScanState;
 
 /*
@@ -374,6 +377,7 @@ postgresGetForeignRelSize(PlannerInfo *root,
 	fpinfo->shippable_extensions = NIL;
 	fpinfo->fetch_size = 100;
 	fpinfo->async_capable = false;
+	fpinfo->fragcnt = 1;
 
 	apply_server_options(fpinfo);
 	apply_table_options(fpinfo);
@@ -757,10 +761,11 @@ postgresGetForeignPlan(PlannerInfo *root,
 	 * Build the fdw_private list that will be available to the executor.
 	 * Items in the list must match order in enum FdwScanPrivateIndex.
 	 */
-	fdw_private = list_make4(makeString(schema.data), 
+	fdw_private = list_make5(makeString(schema.data), 
 			makeString(sql.data),
 							 retrieved_attrs,
-							 makeInteger(fpinfo->fetch_size));
+							 makeInteger(fpinfo->fetch_size),
+							 makeInteger(fpinfo->fragcnt));
 
 	if (IS_JOIN_REL(foreignrel) || IS_UPPER_REL(foreignrel)) {
 		fdw_private = lappend(fdw_private,
@@ -903,6 +908,8 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 												 FdwScanPrivateRetrievedAttrs);
 	fsstate->fetch_size = intVal(list_nth(fsplan->fdw_private,
 										  FdwScanPrivateFetchSize));
+	fsstate->fragcnt = intVal(list_nth(fsplan->fdw_private,
+										  FdwScanPrivateFragCnt));
 
 	/* Create contexts for batches of tuples and per-tuple temp workspace. */
 	fsstate->batch_cxt = AllocSetContextCreate(estate->es_query_cxt,
@@ -1666,7 +1673,7 @@ create_cursor(ForeignScanState *node)
 	}
 
 	/* TODO: kite_submit */
-	req->hdl = kite_submit(req->host, fsstate->schema, fsstate->query, -1, req->fragcnt, errmsg, sizeof(errmsg));
+	req->hdl = kite_submit(req->host, fsstate->schema, fsstate->query, -1, fsstate->fragcnt, errmsg, sizeof(errmsg));
 	if (! req->hdl) {
 		elog(ERROR, "kite_submit failed");
 		return;
@@ -1959,6 +1966,8 @@ apply_server_options(PgFdwRelationInfo *fpinfo)
 			(void) parse_int(defGetString(def), &fpinfo->fetch_size, 0, NULL);
 		else if (strcmp(def->defname, "async_capable") == 0)
 			fpinfo->async_capable = defGetBoolean(def);
+		else if (strcmp(def->defname, "fragcnt") == 0)
+			(void) parse_int(defGetString(def), &fpinfo->fragcnt, 0, NULL);
 	}
 }
 
@@ -2016,6 +2025,7 @@ merge_fdw_options(PgFdwRelationInfo *fpinfo,
 	fpinfo->shippable_extensions = fpinfo_o->shippable_extensions;
 	fpinfo->use_remote_estimate = fpinfo_o->use_remote_estimate;
 	fpinfo->fetch_size = fpinfo_o->fetch_size;
+	fpinfo->fragcnt = fpinfo_o->fragcnt;
 	fpinfo->async_capable = fpinfo_o->async_capable;
 
 	/* Merge the table level options from either side of the join. */
@@ -2038,6 +2048,9 @@ merge_fdw_options(PgFdwRelationInfo *fpinfo,
 		 * relation sizes.
 		 */
 		fpinfo->fetch_size = Max(fpinfo_o->fetch_size, fpinfo_i->fetch_size);
+
+		/* KITE */
+		fpinfo->fragcnt = Max(fpinfo_o->fragcnt, fpinfo_i->fragcnt);
 
 		/*
 		 * We'll prefer to consider this join async-capable if any table from

@@ -135,21 +135,9 @@ static kite_request_t *connect_kite_server(ForeignServer *server, UserMapping *u
 			p++;
 		}
 
-		/* search for fragcnt */
-		for (int i = n - 1; i >= 0 ; i--) 
-		{
-			if (strcmp(keywords[i], "fragcnt") == 0 &&
-					*(values[i]) != '\0')
-			{
-				fragcnt = atoi(values[i]);
-				break;
-			}
-		}
-
 		req = (kite_request_t *) palloc0(sizeof(kite_request_t));
 		req->host = host;
 		req->hdl = 0;
-		req->fragcnt = fragcnt;
 
 		pfree(keywords);
 		pfree(values);
