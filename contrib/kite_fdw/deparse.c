@@ -605,6 +605,15 @@ foreign_expr_walker(Node *node,
 			{
 				OpExpr	   *oe = (OpExpr *) node;
 
+				/* KITE only deal with simple aggregate function. OpExpr with aggregate is not supported */
+				ListCell *lc;
+				foreach (lc, oe->args) {
+					Node *c = lfirst(lc);
+					if (IsA(c, Aggref)) {
+						return false;
+					}
+				}
+
 				/*
 				 * Similarly, only shippable operators can be sent to remote.
 				 * (If the operator is shippable, we assume its underlying
@@ -4022,7 +4031,6 @@ static int deparseKiteGroupIndex(int resno, List *tlist) {
 	foreach (lc, tlist) {
 		TargetEntry *tle = lfirst_node(TargetEntry, lc);
 		int skip = 1;
-		elog(LOG, "resno = %d %d %d", i, resno, tle->resno);
 
 		if (i == resno) {
 			return ret;
