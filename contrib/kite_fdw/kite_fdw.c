@@ -2216,10 +2216,16 @@ foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel,
 									  grouped_rel->relids,
 									  NULL,
 									  NULL);
+		
+#if 1
+			/* KITE cannot handle HAVING */
+			fpinfo->local_conds = lappend(fpinfo->local_conds, rinfo);
+#else 
 			if (is_foreign_expr(root, grouped_rel, expr))
 				fpinfo->remote_conds = lappend(fpinfo->remote_conds, rinfo);
 			else
 				fpinfo->local_conds = lappend(fpinfo->local_conds, rinfo);
+#endif
 		}
 	}
 
