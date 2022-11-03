@@ -1291,9 +1291,6 @@ deparseSelectStmtForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *rel,
 		/* Append HAVING clause */
 		if (remote_conds)
 		{
-#if KITE_CONNECT
-			elog(ERROR, "HAVING not supported by kite");
-#endif
 			appendStringInfoString(buf, " HAVING ");
 			appendConditions(remote_conds, &context);
 		}
@@ -2658,7 +2655,8 @@ deparseRelation(StringInfo buf, Relation rel)
 	if (relname == NULL)
 		relname = RelationGetRelationName(rel);
 
-#ifdef KITE_CONNECT
+	/* KITE */
+#if 1
 	appendStringInfo(buf, "%s", quote_identifier(relname));
 #else
 	appendStringInfo(buf, "%s.%s",
