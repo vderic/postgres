@@ -30,6 +30,51 @@
 #include "utils/memutils.h"
 #include "utils/syscache.h"
 
+/*
+ * SQL functions
+ */
+PG_FUNCTION_INFO_V1(kite_fdw_get_connections);
+PG_FUNCTION_INFO_V1(kite_fdw_disconnect);
+PG_FUNCTION_INFO_V1(kite_fdw_disconnect_all);
+
+Datum kite_fdw_get_connections(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_VOID();
+}
+
+/*
+ * Disconnect the specified cached connections.
+ *
+ * This function discards the open connections that are established by
+ * kite_fdw from the local session to the foreign server with
+ * the given name. Note that there can be multiple connections to
+ * the given server using different user mappings. If the connections
+ * are used in the current local transaction, they are not disconnected
+ * and warning messages are reported. This function returns true
+ * if it disconnects at least one connection, otherwise false. If no
+ * foreign server with the given name is found, an error is reported.
+ */
+Datum
+kite_fdw_disconnect(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_BOOL(false);
+}
+
+/*
+ * Disconnect all the cached connections.
+ *
+ * This function discards all the open connections that are established by
+ * kite_fdw from the local session to the foreign servers.
+ * If the connections are used in the current local transaction, they are
+ * not disconnected and warning messages are reported. This function
+ * returns true if it disconnects at least one connection, otherwise false.
+ */
+Datum
+kite_fdw_disconnect_all(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_BOOL(false);
+}
+
 
 /* KITE */
 static kite_request_t *connect_kite_server(ForeignServer *server, UserMapping *user) 

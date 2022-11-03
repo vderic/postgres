@@ -1707,7 +1707,8 @@ fetch_more_data(ForeignScanState *node)
 		int i;
 
 		if (fsstate->agg) {
-			int batchsz = 1000;
+			int batchsz = fsstate->fetch_size;
+			elog(LOG, "fetchsz = %d", fsstate->fetch_size);
 
 			xrg_agg_fetch(fsstate->agg, hdl);
 
@@ -1735,7 +1736,7 @@ fetch_more_data(ForeignScanState *node)
 			fsstate->eof_reached = (numrows < batchsz);
 
 		} else {
-			int batchsz = 1000;
+			int batchsz = fsstate->fetch_size;
 			xrg_iter_t *iter = 0;
 			int e = 0;
 			numrows = 0;
