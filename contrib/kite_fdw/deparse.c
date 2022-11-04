@@ -480,6 +480,11 @@ foreign_expr_walker(Node *node,
 			break;
 		case T_Param:
 			{
+
+#if 1
+				/* KITE don't support Param */
+				return false;
+#else
 				Param	   *p = (Param *) node;
 
 				/*
@@ -507,6 +512,7 @@ foreign_expr_walker(Node *node,
 					state = FDW_COLLATE_NONE;
 				else
 					state = FDW_COLLATE_UNSAFE;
+#endif
 			}
 			break;
 		case T_SubscriptingRef:
@@ -607,12 +613,15 @@ foreign_expr_walker(Node *node,
 
 				/* KITE only deal with simple aggregate function. OpExpr with aggregate is not supported */
 				ListCell *lc;
-				foreach (lc, oe->args) {
-					Node *c = lfirst(lc);
-					if (IsA(c, Aggref)) {
+				foreach (lc, oe->args)
+				{
+					/* KITE if Aggref presents in args, return false */
+					Node *n = (Node *) lfirst(lc);
+					if (IsA(n, Aggref) || !foreign_expr_walker(n,
+											 glob_cxt, &inner_cxt, case_arg_cxt))
 						return false;
-					}
 				}
+
 
 				/*
 				 * Similarly, only shippable operators can be sent to remote.
@@ -1313,7 +1322,6 @@ deparseSelectStmtForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *rel,
 	if (has_limit)
 		appendLimitClause(&context);
 
-	elog(LOG, "KITE SQL: %s", buf->data);
 	/* Add any necessary FOR UPDATE/SHARE. */
 	deparseLockingClause(&context);
 }

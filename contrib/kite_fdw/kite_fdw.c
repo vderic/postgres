@@ -740,6 +740,7 @@ postgresGetForeignPlan(PlannerInfo *root,
 							&retrieved_attrs, &params_list, &retrieved_aggfnoids,
 							&retrieved_groupby_attrs);
 
+	//elog(LOG, "FINAL SQL: %s", sql.data);
 	/* Remember remote_exprs for possible use by postgresPlanDirectModify */
 	fpinfo->final_remote_exprs = remote_exprs;
 
@@ -1038,7 +1039,7 @@ postgresIterateForeignScan(ForeignScanState *node)
 static void
 postgresReScanForeignScan(ForeignScanState *node)
 {
-	elog(ERROR, "ReScan not supported by kite");
+	/* KITE already disable Param so ReScan do nothing even Postgres get this function */
 	return;
 }
 
@@ -1777,6 +1778,7 @@ fetch_more_data(ForeignScanState *node)
 				}
 			}
 
+			//elog(LOG, "fetch_more_data %d row", numrows);
 			fsstate->num_tuples = numrows;
 			fsstate->next_tuple = 0;
 
